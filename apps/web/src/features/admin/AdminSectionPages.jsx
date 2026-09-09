@@ -1,0 +1,9 @@
+export { AdminMenuPage } from './AdminMenuPage.jsx';
+export { AdminCategoriesPage } from './AdminCategoriesPage.jsx';
+export { AdminDishesPage } from './AdminDishesPage.jsx';
+export { AdminTablesPage } from './AdminTablesPage.jsx';
+export { AdminQrCodesPage } from './AdminQrCodesPage.jsx';
+export { AdminOrdersPage } from './AdminOrdersPage.jsx';
+export { AdminReportsPage } from './AdminReportsPage.jsx';
+export { AdminDayEndPage } from './AdminDayEndPage.jsx';
+export { AdminSettingsPage } from './AdminSettingsPage.jsx';

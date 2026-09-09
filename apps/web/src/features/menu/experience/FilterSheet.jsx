@@ -1,0 +1,243 @@
+import React, { useMemo } from 'react';
+import { X, RotateCcw, Check } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { DIETARY_TAG_GROUPS } from '../../../shared/constants/dietaryTags.js';
+
+const SPICE_TAGS = ['Mild', 'Spicy', 'Hot'];
+
+/** Collect tags that actually appear on this restaurant's live menu. */
+export function buildMenuFilterOptions(dishes = []) {
+  const present = new Set();
+  for (const dish of dishes) {
+    for (const tag of dish.dietaryTags || []) {
+      const t = String(tag || '').trim();
+      if (t) present.add(t);
+    }
+  }
+
+  const groups = DIETARY_TAG_GROUPS.map((group) => {
+    // Spice tags get their own section
+    if (group.label === 'Prep & spice') {
+      const tags = group.tags.filter((tag) => !SPICE_TAGS.includes(tag) && present.has(tag));
+      return { label: group.label, tags };
+    }
+    return {
+      label: group.label,
+      tags: group.tags.filter((tag) => present.has(tag)),
+    };
+  }).filter((group) => group.tags.length > 0);
+
+  const spiceTags = SPICE_TAGS.filter((tag) => present.has(tag));
+
+  // Any legacy/custom tags on dishes that aren't in presets
+  const presetSet = new Set(DIETARY_TAG_GROUPS.flatMap((g) => g.tags));
+  const extraTags = [...present].filter((tag) => !presetSet.has(tag)).sort();
+
+  return { groups, spiceTags, extraTags };
+}
+
+export function FilterSheet({
+  isOpen,
+  filters,
+  dishes = [],
+  onClose,
+  onUpdateFilters,
+  onResetFilters,
+}) {
+  const menuOptions = useMemo(() => buildMenuFilterOptions(dishes), [dishes]);
+
+  if (!isOpen) return null;
+
+  const toggleDietary = (tag) => {
+    const next = filters.dietary.includes(tag)
+      ? filters.dietary.filter((t) => t !== tag)
+      : [...filters.dietary, tag];
+    onUpdateFilters({ ...filters, dietary: next });
+  };
+
+  const toggleSpice = (tag) => {
+    const current = filters.spiceLevels || [];
+    const next = current.includes(tag)
+      ? current.filter((l) => l !== tag)
+      : [...current, tag];
+    onUpdateFilters({ ...filters, spiceLevels: next });
+  };
+
+  const totalActive =
+    (filters.dietary?.length || 0) +
+    (filters.spiceLevels?.length || 0) +
+    (filters.richness?.length || 0) +
+    (filters.portion?.length || 0);
+
+  const hasAnyOptions =
+    menuOptions.groups.length > 0 ||
+    menuOptions.spiceTags.length > 0 ||
+    menuOptions.extraTags.length > 0;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label="Close filters"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98, y: 30 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 30 }}
+        className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-stone-200/70 px-5 py-3.5">
+          <div className="min-w-0">
+            <h3 className="font-serif text-lg font-medium leading-tight text-stone-900">
+              Refine menu
+            </h3>
+            <span className="block text-[11px] font-normal text-stone-500">
+              {totalActive > 0
+                ? `${totalActive} active · only tags used on this menu`
+                : 'Only options used on this menu'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4 no-scrollbar">
+          {!hasAnyOptions ? (
+            <p className="text-sm text-stone-500">
+              No dietary tags on this menu yet. Add tags in admin to enable filters.
+            </p>
+          ) : null}
+
+          {menuOptions.groups.map((group) => (
+            <div key={group.label} className="space-y-2">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-800">
+                {group.label}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {group.tags.map((tag) => {
+                  const active = filters.dietary.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleDietary(tag)}
+                      className={`flex cursor-pointer items-center space-x-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-stone-950 bg-stone-950 text-[#FAF8F5] shadow-2xs'
+                          : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      {active ? <Check className="h-3.5 w-3.5 text-[#E0CDA9]" /> : null}
+                      <span>{tag === 'Signature' ? 'Signature Dish' : tag}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {menuOptions.spiceTags.length > 0 ? (
+            <div className="space-y-2">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-800">
+                Spice
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {menuOptions.spiceTags.map((tag) => {
+                  const active = (filters.spiceLevels || []).includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleSpice(tag)}
+                      className={`flex cursor-pointer items-center space-x-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-stone-950 bg-stone-950 text-[#FAF8F5] shadow-2xs'
+                          : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      {active ? <Check className="h-3.5 w-3.5 text-[#E0CDA9]" /> : null}
+                      <span>{tag}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {menuOptions.extraTags.length > 0 ? (
+            <div className="space-y-2">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-800">
+                Other tags on menu
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {menuOptions.extraTags.map((tag) => {
+                  const active = filters.dietary.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleDietary(tag)}
+                      className={`flex cursor-pointer items-center space-x-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-stone-950 bg-stone-950 text-[#FAF8F5] shadow-2xs'
+                          : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      {active ? <Check className="h-3.5 w-3.5 text-[#E0CDA9]" /> : null}
+                      <span>{tag}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-center justify-between border-t border-stone-200 px-5 py-3">
+          <button
+            type="button"
+            onClick={onResetFilters}
+            className="inline-flex cursor-pointer items-center space-x-1.5 rounded-lg p-1.5 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>Reset All</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="cursor-pointer rounded-full bg-stone-950 px-6 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
+          >
+            Apply ({totalActive})
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+export const EMPTY_FILTERS = Object.freeze({
+  dietary: [],
+  spiceLevels: [],
+  richness: [],
+  portion: [],
+});
+
+export function createEmptyFilters() {
+  return {
+    dietary: [],
+    spiceLevels: [],
+    richness: [],
+    portion: [],
+  };
+}

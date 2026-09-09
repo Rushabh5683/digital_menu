@@ -1,0 +1,31 @@
+{
+  "name": "digital-menu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Digital Menu + Customer Attention Intelligence demo",
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "npm run dev --workspace=@digital-menu/web",
+    "dev:api": "npm run dev --workspace=@digital-menu/api",
+    "build": "npm run build --workspace=@digital-menu/web",
+    "start:api": "npm run start --workspace=@digital-menu/api",
+    "db:generate": "npm run db:generate --workspace=@digital-menu/api",
+    "db:migrate": "npm run db:migrate --workspace=@digital-menu/api",
+    "db:push": "npm run db:push --workspace=@digital-menu/api",
+    "db:seed": "npm run db:seed --workspace=@digital-menu/api",
+    "db:reset": "npm run db:reset --workspace=@digital-menu/api",
+    "db:studio": "npm run db:studio --workspace=@digital-menu/api",
+    "test:api": "npm run test --workspace=@digital-menu/api",
+    "lint": "npm run lint --workspace=@digital-menu/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

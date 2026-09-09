@@ -1,0 +1,6 @@
+{
+  "name": "ARCADIA Digital Menu & Experience",
+  "description": "A luxury customer experience digital menu for high-end dining, featuring intelligent discovery, dish comparisons, sensory taste profiles, and behavioural intelligence tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

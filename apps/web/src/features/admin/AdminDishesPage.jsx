@@ -1,0 +1,740 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { GripVertical, ImagePlus, Plus, Utensils } from 'lucide-react';
+import { api } from '../../shared/api/client.js';
+import { Alert } from '../../shared/ui/Alert.jsx';
+import { Button } from '../../shared/ui/Button.jsx';
+import { Field } from '../../shared/ui/Field.jsx';
+import { Input, Select, Textarea } from '../../shared/ui/FormControls.jsx';
+import { FormSection } from '../../shared/ui/FormSection.jsx';
+import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
+import { DIETARY_TAG_GROUPS, DIETARY_TAG_PRESETS, SIGNATURE_DISH_TAG } from '../../shared/constants/dietaryTags.js';
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+}
+
+function parseList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function AdminDishesPage() {
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [editor, setEditor] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [formError, setFormError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [dragId, setDragId] = useState(null);
+
+  const menusQuery = useQuery({
+    queryKey: ['admin', 'menus'],
+    queryFn: async () => (await api.listAdminMenus()).menus,
+  });
+
+  const menus = menusQuery.data || [];
+  const menuIdParam = searchParams.get('menuId');
+  const categoryIdParam = searchParams.get('categoryId') || '';
+
+  const selectedMenuId = useMemo(() => {
+    if (menuIdParam && menus.some((menu) => menu.id === menuIdParam)) return menuIdParam;
+    const published = menus.find((menu) => menu.isPublished);
+    return published?.id || menus[0]?.id || '';
+  }, [menuIdParam, menus]);
+
+  const menuQuery = useQuery({
+    queryKey: ['admin', 'menus', selectedMenuId],
+    queryFn: async () => (await api.getAdminMenu(selectedMenuId)).menu,
+    enabled: Boolean(selectedMenuId),
+  });
+
+  const categories = menuQuery.data?.categories || [];
+  const selectedCategoryId = useMemo(() => {
+    if (categoryIdParam && categories.some((category) => category.id === categoryIdParam)) {
+      return categoryIdParam;
+    }
+    return categories[0]?.id || '';
+  }, [categoryIdParam, categories]);
+
+  const dishesQuery = useQuery({
+    queryKey: ['admin', 'dishes', selectedCategoryId],
+    queryFn: async () =>
+      (await api.listAdminDishes({ categoryId: selectedCategoryId })).dishes,
+    enabled: Boolean(selectedCategoryId),
+  });
+
+  const dishes = dishesQuery.data || [];
+
+  useEffect(() => {
+    if (!selectedMenuId) return;
+    const next = { menuId: selectedMenuId };
+    if (selectedCategoryId) next.categoryId = selectedCategoryId;
+    const current =
+      searchParams.get('menuId') === next.menuId &&
+      (searchParams.get('categoryId') || '') === (next.categoryId || '');
+    if (!current) setSearchParams(next, { replace: true });
+  }, [selectedMenuId, selectedCategoryId, searchParams, setSearchParams]);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ id, categoryId, payload }) => {
+      if (id) return api.updateAdminDish(id, payload);
+      return api.createAdminDish(categoryId, payload);
+    },
+    onSuccess: async () => {
+      setEditor(null);
+      setFormError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'menus'] }),
+      ]);
+    },
+    onError: (error) => setFormError(error.message),
+  });
+
+  const availabilityMutation = useMutation({
+    mutationFn: ({ id, isAvailable }) => api.updateAdminDish(id, { isAvailable }),
+    onMutate: async ({ id, isAvailable }) => {
+      await queryClient.cancelQueries({ queryKey: ['admin', 'dishes', selectedCategoryId] });
+      const previous = queryClient.getQueryData(['admin', 'dishes', selectedCategoryId]);
+      queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], (list = []) =>
+        list.map((dish) => (dish.id === id ? { ...dish, isAvailable } : dish)),
+      );
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], context.previous);
+      }
+      setActionError(error.message);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] });
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: ({ categoryId, orderedIds }) =>
+      api.reorderAdminDishes(categoryId, orderedIds),
+    onMutate: async ({ orderedIds }) => {
+      await queryClient.cancelQueries({ queryKey: ['admin', 'dishes', selectedCategoryId] });
+      const previous = queryClient.getQueryData(['admin', 'dishes', selectedCategoryId]);
+      const byId = new Map((previous || []).map((dish) => [dish.id, dish]));
+      queryClient.setQueryData(
+        ['admin', 'dishes', selectedCategoryId],
+        orderedIds
+          .map((id, index) => {
+            const dish = byId.get(id);
+            return dish ? { ...dish, displayOrder: index + 1 } : null;
+          })
+          .filter(Boolean),
+      );
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], context.previous);
+      }
+      setActionError(error.message);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.deleteAdminDish(id),
+    onSuccess: async () => {
+      setConfirm(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'menus'] }),
+      ]);
+    },
+    onError: (error) => setActionError(error.message),
+  });
+
+  function onDrop(targetId) {
+    if (!dragId || dragId === targetId || !selectedCategoryId) return;
+    const ids = dishes.map((dish) => dish.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, dragId);
+    setDragId(null);
+    reorderMutation.mutate({ categoryId: selectedCategoryId, orderedIds: next });
+  }
+
+  function openCreate() {
+    if (!selectedCategoryId) return;
+    setFormError(null);
+    setEditor({
+      id: null,
+      categoryId: selectedCategoryId,
+      name: '',
+      description: '',
+      price: '',
+      imageUrl: '',
+      ingredients: '',
+      dietaryTags: [],
+      isAvailable: true,
+    });
+  }
+
+  return (
+    <div className="space-y-6 menu-fade-up">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">Dishes</p>
+          <h2
+            className="mt-2 text-3xl tracking-tight text-[var(--ink)]"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            Dish library
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
+            Manage plates, pricing, availability, dietary tags, and imagery for your published menu.
+          </p>
+        </div>
+        <Button disabled={!selectedCategoryId} onClick={openCreate}>
+          <Plus size={16} />
+          Add dish
+        </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+        <Field label="Menu" htmlFor="dish-menu">
+          <Select
+            id="dish-menu"
+            value={selectedMenuId}
+            onChange={(event) =>
+              setSearchParams({ menuId: event.target.value }, { replace: true })
+            }
+            disabled={menus.length === 0}
+          >
+            {menus.length === 0 ? <option value="">No menus</option> : null}
+            {menus.map((menu) => (
+              <option key={menu.id} value={menu.id}>
+                {menu.name}
+                {menu.isPublished ? ' (live)' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Category" htmlFor="dish-category">
+          <Select
+            id="dish-category"
+            value={selectedCategoryId}
+            onChange={(event) =>
+              setSearchParams(
+                { menuId: selectedMenuId, categoryId: event.target.value },
+                { replace: true },
+              )
+            }
+            disabled={categories.length === 0}
+          >
+            {categories.length === 0 ? <option value="">No categories</option> : null}
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+                {!category.isEnabled ? ' (disabled)' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Link
+          to={`/admin/categories?menuId=${selectedMenuId || ''}`}
+          className="text-sm font-semibold text-[var(--teal)] hover:underline lg:mb-3"
+        >
+          Manage categories
+        </Link>
+      </div>
+
+      {actionError ? <Alert tone="error">{actionError}</Alert> : null}
+
+      <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
+        {menusQuery.isLoading || menuQuery.isLoading || dishesQuery.isLoading ? (
+          <p className="py-10 text-center text-sm text-[var(--muted)]">Loading dishes…</p>
+        ) : null}
+
+        {dishesQuery.error ? <Alert tone="error">{dishesQuery.error.message}</Alert> : null}
+
+        {!menusQuery.isLoading && menus.length === 0 ? (
+          <EmptyDishes
+            title="Create a menu first"
+            text="Dishes live inside categories on a menu."
+            to="/admin/menu"
+            label="Go to menus"
+          />
+        ) : null}
+
+        {menus.length > 0 && categories.length === 0 && !menuQuery.isLoading ? (
+          <EmptyDishes
+            title="Add a category first"
+            text="Create a category, then add dishes to it."
+            to={`/admin/categories?menuId=${selectedMenuId}`}
+            label="Go to categories"
+          />
+        ) : null}
+
+        {selectedCategoryId && !dishesQuery.isLoading && !dishesQuery.error && dishes.length === 0 ? (
+          <EmptyDishes title="No dishes yet" text="Add your first plate to this category." action={openCreate} label="Add dish" />
+        ) : null}
+
+        {dishes.length > 0 ? (
+          <ul className="space-y-3">
+            {dishes.map((dish) => (
+              <li
+                key={dish.id}
+                draggable
+                onDragStart={() => setDragId(dish.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => onDrop(dish.id)}
+                onDragEnd={() => setDragId(null)}
+                className={[
+                  'flex flex-col gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface-elevated)]/60 p-4 sm:flex-row sm:items-center',
+                  dragId === dish.id ? 'opacity-60 ring-2 ring-[var(--teal)]/30' : '',
+                  !dish.isAvailable ? 'opacity-75' : '',
+                ].join(' ')}
+              >
+                <button
+                  type="button"
+                  className="hidden cursor-grab touch-none rounded-lg p-1 text-[var(--muted)] hover:bg-black/[0.04] sm:block"
+                  aria-label="Drag to reorder"
+                >
+                  <GripVertical size={18} />
+                </button>
+                <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-black/[0.03]">
+                  {dish.imageUrl ? (
+                    <img
+                      src={dish.imageUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-[var(--muted)]">
+                      <ImagePlus size={18} />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-[var(--ink)]">{dish.name}</h3>
+                    <span className="text-sm font-semibold text-[var(--ink)]">
+                      {formatMoney(dish.price)}
+                    </span>
+                    <span
+                      className={[
+                        'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]',
+                        dish.isAvailable
+                          ? 'bg-[var(--teal)]/10 text-[var(--teal)]'
+                          : 'bg-black/5 text-[var(--muted)]',
+                      ].join(' ')}
+                    >
+                      {dish.isAvailable ? 'Available' : 'Unavailable'}
+                    </span>
+                  </div>
+                  {dish.description && dish.description !== '—' ? (
+                    <p className="mt-1 line-clamp-2 text-sm text-[var(--muted)]">{dish.description}</p>
+                  ) : null}
+                  {(dish.dietaryTags || []).length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {dish.dietaryTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-[var(--line)] bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      availabilityMutation.mutate({
+                        id: dish.id,
+                        isAvailable: !dish.isAvailable,
+                      })
+                    }
+                  >
+                    {dish.isAvailable ? 'Mark unavailable' : 'Mark available'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setFormError(null);
+                      setEditor({
+                        id: dish.id,
+                        categoryId: dish.categoryId || selectedCategoryId,
+                        name: dish.name,
+                        description: dish.description === '—' ? '' : dish.description || '',
+                        price: String(dish.price ?? ''),
+                        imageUrl: dish.imageUrl || '',
+                        ingredients: (dish.ingredients || []).join(', '),
+                        dietaryTags: dish.dietaryTags || [],
+                        isAvailable: dish.isAvailable !== false,
+                      });
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirm(dish)}>
+                    Delete
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <Modal
+        open={Boolean(editor)}
+        title={editor?.id ? 'Edit dish' : 'New dish'}
+        subtitle="Guests only see available dishes in enabled categories on a published menu."
+        wide
+        onClose={() => !saveMutation.isPending && setEditor(null)}
+      >
+        {editor ? (
+          <DishForm
+            initial={editor}
+            categories={categories}
+            error={formError}
+            loading={saveMutation.isPending}
+            onCancel={() => setEditor(null)}
+            onSubmit={(payload) =>
+              saveMutation.mutate({
+                id: editor.id,
+                categoryId: payload.categoryId || editor.categoryId,
+                payload,
+              })
+            }
+          />
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(confirm)}
+        title="Delete dish?"
+        message={`Delete “${confirm?.name}”? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        loading={deleteMutation.isPending}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => confirm && deleteMutation.mutate(confirm.id)}
+      />
+    </div>
+  );
+}
+
+function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
+  const [name, setName] = useState(initial.name || '');
+  const [description, setDescription] = useState(initial.description || '');
+  const [price, setPrice] = useState(initial.price || '');
+  const [imageUrl, setImageUrl] = useState(initial.imageUrl || '');
+  const [ingredients, setIngredients] = useState(initial.ingredients || '');
+  const [dietaryTags, setDietaryTags] = useState(initial.dietaryTags || []);
+  const [isAvailable, setIsAvailable] = useState(initial.isAvailable !== false);
+  const [categoryId, setCategoryId] = useState(initial.categoryId || '');
+  const [localError, setLocalError] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function onImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setLocalError('Image must be 5 MB or smaller');
+      return;
+    }
+    setUploading(true);
+    setLocalError(null);
+    try {
+      const result = await api.uploadAdminDishImage(file);
+      setImageUrl(result.imageUrl);
+    } catch (err) {
+      setLocalError(err.message || 'Image upload failed');
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  }
+
+  function toggleTag(tag) {
+    setDietaryTags((current) =>
+      current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag],
+    );
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setLocalError('Dish name is required');
+      return;
+    }
+    const priceNumber = Number(price);
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      setLocalError('Enter a valid price ≥ 0');
+      return;
+    }
+    if (!categoryId) {
+      setLocalError('Category is required');
+      return;
+    }
+    setLocalError(null);
+    onSubmit({
+      categoryId,
+      name: trimmedName,
+      description: description.trim(),
+      price: priceNumber,
+      imageUrl: imageUrl || null,
+      ingredients: parseList(ingredients),
+      dietaryTags,
+      isAvailable,
+    });
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={handleSubmit}>
+      {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
+
+      <FormSection title="Basics">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Name" htmlFor="dish-name" required className="sm:col-span-2">
+            <Input
+              id="dish-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Butter chicken"
+              maxLength={120}
+              disabled={loading}
+              autoFocus
+            />
+          </Field>
+          <Field label="Category" htmlFor="dish-form-category" required>
+            <Select
+              id="dish-form-category"
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+              disabled={loading}
+            >
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Price (INR)" htmlFor="dish-price" required>
+            <Input
+              id="dish-price"
+              type="number"
+              min="0"
+              step="1"
+              value={price}
+              onChange={(event) => setPrice(event.target.value)}
+              disabled={loading}
+            />
+          </Field>
+        </div>
+        <Field label="Description" htmlFor="dish-description">
+          <Textarea
+            id="dish-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={3}
+            disabled={loading}
+            placeholder="Short guest-facing description"
+          />
+        </Field>
+        <Field
+          label="Ingredients"
+          htmlFor="dish-ingredients"
+          hint="Comma-separated list"
+        >
+          <Input
+            id="dish-ingredients"
+            value={ingredients}
+            onChange={(event) => setIngredients(event.target.value)}
+            placeholder="Chicken, butter, tomato, cream"
+            disabled={loading}
+          />
+        </Field>
+        <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-[var(--line)]"
+            checked={isAvailable}
+            onChange={(event) => setIsAvailable(event.target.checked)}
+            disabled={loading}
+          />
+          Available to order / show on menu
+        </label>
+      </FormSection>
+
+      <FormSection
+        title="Signature Dishes"
+        description="Mark dishes to feature them in the Signature Dishes section on the guest menu."
+      >
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--ink)]">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-[var(--line)]"
+            checked={dietaryTags.includes(SIGNATURE_DISH_TAG)}
+            onChange={() => toggleTag(SIGNATURE_DISH_TAG)}
+            disabled={loading}
+          />
+          <span>
+            <span className="block font-semibold">Mark as Signature</span>
+            <span className="mt-0.5 block text-xs font-normal text-[var(--muted)]">
+              Shows under “Signature Dishes” on the guest menu
+            </span>
+          </span>
+        </label>
+      </FormSection>
+
+      <FormSection
+        title="Dietary tags"
+        description="Tap only what applies — presets only. Keep dish setup under a minute."
+      >
+        <div className="space-y-4">
+          {DIETARY_TAG_GROUPS.map((group) => (
+            <div key={group.label}>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                {group.label}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {group.tags.map((tag) => {
+                  const active = dietaryTags.includes(tag);
+                  const label = tag === SIGNATURE_DISH_TAG ? 'Signature Dish' : tag;
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => toggleTag(tag)}
+                      className={[
+                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                        active
+                          ? 'border-[var(--teal)] bg-[var(--teal)]/10 text-[var(--teal)]'
+                          : 'border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--teal)]/40',
+                      ].join(' ')}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {dietaryTags.filter((tag) => !DIETARY_TAG_PRESETS.includes(tag)).length > 0 ? (
+            <div>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                Legacy tags (tap to remove)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {dietaryTags
+                  .filter((tag) => !DIETARY_TAG_PRESETS.includes(tag))
+                  .map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => toggleTag(tag)}
+                      className="rounded-full border border-[var(--teal)] bg-[var(--teal)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--teal)]"
+                    >
+                      {tag} ×
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </FormSection>
+
+      <FormSection title="Image">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <div className="h-28 w-40 overflow-hidden rounded-2xl border border-[var(--line)] bg-black/[0.03]">
+            {imageUrl ? (
+              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--muted)]">
+                <ImagePlus size={20} />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                  No image
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              disabled={loading || uploading}
+              onChange={onImageChange}
+              className="block w-full text-sm text-[var(--muted)] file:mr-3 file:rounded-xl file:border-0 file:bg-[var(--ink)] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
+            />
+            <p className="text-xs text-[var(--muted)]">JPG, PNG, WEBP, or GIF · max 5 MB</p>
+            {imageUrl ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={loading || uploading}
+                onClick={() => setImageUrl('')}
+              >
+                Remove image
+              </Button>
+            ) : null}
+            {uploading ? <p className="text-xs text-[var(--teal)]">Uploading…</p> : null}
+          </div>
+        </div>
+      </FormSection>
+
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" disabled={loading || uploading} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={loading || uploading}>
+          {loading ? 'Saving…' : initial.id ? 'Save changes' : 'Create dish'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function EmptyDishes({ title, text, to, action, label }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-14 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-elevated)] text-[var(--teal)]">
+        <Utensils size={20} />
+      </div>
+      <p className="mt-4 font-semibold text-[var(--ink)]">{title}</p>
+      <p className="mx-auto mt-2 max-w-md text-sm text-[var(--muted)]">{text}</p>
+      {to ? (
+        <Link to={to} className="mt-5 inline-flex text-sm font-semibold text-[var(--teal)] hover:underline">
+          {label}
+        </Link>
+      ) : (
+        <Button className="mt-5" onClick={action}>
+          <Plus size={16} />
+          {label}
+        </Button>
+      )}
+    </div>
+  );
+}
