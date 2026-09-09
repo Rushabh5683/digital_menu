@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "start": "node src/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
