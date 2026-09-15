@@ -2,6 +2,7 @@ import { Check, Clock3, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
 import {
@@ -258,25 +259,27 @@ export function MyOrderDrawer({
   anonymousSessionId,
   tableNumber,
 }) {
+  useLockBodyScroll(open);
+
   if (!open) return null;
 
   const terminal = order ? isTerminalOrderStatus(order.status) : true;
 
   const sheet = (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
+      className="guest-portal fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="my-order-title"
     >
       <button
         type="button"
-        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
+        className="drawer-backdrop absolute inset-0 bg-stone-900/40"
         aria-label="Close order"
         onClick={onClose}
       />
-      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-[var(--g-line-strong)] bg-[var(--g-bg-base)] shadow-[0_28px_60px_rgba(60,40,15,0.22)] sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--g-line)] bg-[var(--g-bg-elevated)] px-5 py-4">
+      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--g-accent-deep)]">
               My Order
@@ -291,13 +294,13 @@ export function MyOrderDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-[var(--g-line)] bg-white p-2 text-[var(--g-ink-soft)] transition-colors hover:bg-[var(--g-bg-deep)] hover:text-[var(--g-ink)]"
+            className="rounded-full border border-stone-200 bg-white p-2 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
             aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
           {order ? (
             <OrderStatusPanel
               order={order}
@@ -323,7 +326,7 @@ export function MyOrderDrawer({
           )}
         </div>
         <div
-          className={`shrink-0 space-y-2 border-t border-[var(--g-line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+          className={`shrink-0 space-y-2 border-t border-stone-200 bg-[#FAF8F5] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
         >
           {order && !terminal && typeof onAddMore === 'function' ? (
             <button

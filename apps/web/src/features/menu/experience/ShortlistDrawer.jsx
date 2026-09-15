@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { formatPrice, dishImage, parsePrice } from './lib/formatters.js';
 
 /**
@@ -41,6 +42,8 @@ export function ShortlistDrawer({
       return new Set([...prev].filter((id) => valid.has(id)));
     });
   }, [shortlist, isOpen]);
+
+  useLockBodyScroll(isOpen);
 
   if (!isOpen) return null;
 
@@ -85,12 +88,12 @@ export function ShortlistDrawer({
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-50 flex flex-col justify-end"
+      className="guest-portal fixed inset-x-0 top-0 z-50 flex flex-col justify-end"
       style={{ bottom: 'calc(3.85rem + env(safe-area-inset-bottom, 0px))' }}
     >
       <button
         type="button"
-        className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
+        className="absolute inset-0 cursor-default bg-stone-900/40"
         aria-label="Close shortlist"
         onClick={onClose}
       />
@@ -99,9 +102,9 @@ export function ShortlistDrawer({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 36 }}
         transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl"
+        className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-stone-200/80 p-5">
+        <div className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-[#FDFBF7] p-5">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9A7B4F]/15 text-[#9A7B4F]">
               <UtensilsCrossed className="h-4 w-4" />
@@ -127,7 +130,7 @@ export function ShortlistDrawer({
         </div>
 
         {showServerMode ? (
-          <div className="flex-1 space-y-6 overflow-y-auto bg-white p-6 no-scrollbar">
+          <div className="flex-1 space-y-6 overflow-y-auto overscroll-contain bg-white p-6 no-scrollbar">
             <div className="space-y-1.5 rounded-2xl bg-stone-950 p-5 text-center text-stone-50 shadow-sm">
               <div className="flex items-center justify-center space-x-1.5 font-serif text-xs uppercase tracking-widest text-[#E0CDA9]">
                 <UserCheck className="mr-1 h-4 w-4 text-[#E0CDA9]" />
@@ -171,7 +174,7 @@ export function ShortlistDrawer({
             </button>
           </div>
         ) : (
-          <div className="flex-1 space-y-4 overflow-y-auto p-5 no-scrollbar">
+          <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain bg-[#FAF8F5] p-5 no-scrollbar">
             {shortlist.length === 0 ? (
               <div className="flex min-h-[40vh] flex-col items-center justify-center space-y-3 p-6 text-center text-stone-400">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-300">

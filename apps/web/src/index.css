@@ -133,6 +133,7 @@ img {
 
 .drawer-panel {
   animation: drawer-up 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  background-color: #faf8f5;
 }
 
 .drawer-backdrop {
@@ -332,14 +333,15 @@ img {
   font-display: swap;
 }
 
-.guest-menu {
+.guest-menu,
+.guest-portal {
   --g-ink: #1c1917;
   --g-ink-soft: #57534e;
   --g-bg-deep: #faf8f5;
   --g-bg-base: #faf8f5;
   --g-bg-surface: #ffffff;
   --g-bg-elevated: #fdfbf7;
-  --g-bg-card: rgba(255, 253, 249, 0.92);
+  --g-bg-card: #fffdf9;
   --g-surface: #faf6f0;
   --g-card: #ffffff;
   --g-muted: #78716c;
@@ -366,6 +368,9 @@ img {
   --font-body: "Plus Jakarta Sans", "DM Sans", system-ui, sans-serif;
   font-family: var(--font-body);
   color: var(--g-ink);
+}
+
+.guest-menu {
   background: var(--g-bg-deep);
   min-height: 100dvh;
 }

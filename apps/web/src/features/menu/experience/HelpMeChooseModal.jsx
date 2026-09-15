@@ -9,6 +9,7 @@ import {
 import { X, ArrowRight, RotateCcw, ChevronRight, HelpCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 
 export function HelpMeChooseModal({
   isOpen,
@@ -43,6 +44,8 @@ export function HelpMeChooseModal({
     if (!isOpen) return;
     resetFlow();
   }, [isOpen, analysis.counts.total, resetFlow]);
+
+  useLockBodyScroll(isOpen);
 
   if (!isOpen) return null;
 
@@ -86,11 +89,11 @@ export function HelpMeChooseModal({
   })();
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[70] flex justify-center" style={{ bottom: 0 }}>
+    <div className="guest-portal fixed inset-x-0 top-0 z-[70] flex justify-center" style={{ bottom: 0 }}>
       <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
         <button
           type="button"
-          className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
+          className="absolute inset-0 cursor-default bg-stone-900/40"
           aria-label="Close Help Me Choose"
           onClick={onClose}
         />
@@ -100,7 +103,7 @@ export function HelpMeChooseModal({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl"
+          className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
         >
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">

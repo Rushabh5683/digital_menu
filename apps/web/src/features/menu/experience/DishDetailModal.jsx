@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Plus,
@@ -8,12 +8,14 @@ import {
   Info,
   Sparkles,
   ChevronRight,
+  ChevronLeft,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker, splitDietaryAndServesTags } from '../../../shared/constants/dietaryTags.js';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { DishSteam, categoryShowsSteam } from './DishSteam.jsx';
 
 function sameCategory(a, b) {
@@ -32,6 +34,24 @@ function formatServesLabel(tag) {
   return `${count} ${count === '1' ? 'person' : 'people'}`;
 }
 
+const SWIPE_DISTANCE = 72;
+const SWIPE_VELOCITY = 450;
+
+const dishSlideVariants = {
+  enter: (dir) => ({
+    x: dir === 0 ? 0 : dir > 0 ? '78%' : '-78%',
+    opacity: dir === 0 ? 1 : 0.35,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (dir) => ({
+    x: dir === 0 ? 0 : dir > 0 ? '-42%' : '42%',
+    opacity: 0.2,
+  }),
+};
+
 export function DishDetailModal({
   dish,
   allDishes = [],
@@ -47,14 +67,56 @@ export function DishDetailModal({
 }) {
   const [selectedIngredient, setSelectedIngredient] = useState(null);
   const [compactHeader, setCompactHeader] = useState(false);
+  const [slideDir, setSlideDir] = useState(0);
   const scrollRef = useRef(null);
   const heroRef = useRef(null);
+  const touchRef = useRef(null);
+
+  useLockBodyScroll(Boolean(dish));
+
+  const categoryDishes = useMemo(() => {
+    if (!dish) return [];
+    return allDishes.filter((d) => sameCategory(dish, d));
+  }, [dish, allDishes]);
+
+  const categoryIndex = categoryDishes.findIndex((d) => d.id === dish?.id);
+  const canSwipe = categoryDishes.length > 1 && categoryIndex >= 0;
+  const hasPrev = canSwipe && categoryIndex > 0;
+  const hasNext = canSwipe && categoryIndex < categoryDishes.length - 1;
 
   useEffect(() => {
     setSelectedIngredient(null);
     setCompactHeader(false);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [dish?.id]);
+
+  useEffect(() => {
+    if (!dish || categoryDishes.length < 2) return undefined;
+
+    function onKey(event) {
+      const idx = categoryDishes.findIndex((d) => d.id === dish.id);
+      if (idx < 0 || typeof onSelectDish !== 'function') return;
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        const next = categoryDishes[idx + 1];
+        if (next) {
+          setSlideDir(1);
+          onSelectDish(next);
+        }
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        const prev = categoryDishes[idx - 1];
+        if (prev) {
+          setSlideDir(-1);
+          onSelectDish(prev);
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dish, categoryDishes, onSelectDish]);
 
   if (!dish) return null;
 
@@ -88,6 +150,53 @@ export function DishDetailModal({
     fallbackAlts = fromSimilar.length > 0 ? fromSimilar : sameCategoryAvailable;
   }
 
+  function goTo(nextIndex, dir) {
+    const next = categoryDishes[nextIndex];
+    if (!next || typeof onSelectDish !== 'function') return;
+    setSlideDir(dir);
+    onSelectDish(next);
+  }
+
+  function goNext() {
+    if (!hasNext) return;
+    goTo(categoryIndex + 1, 1);
+  }
+
+  function goPrev() {
+    if (!hasPrev) return;
+    goTo(categoryIndex - 1, -1);
+  }
+
+  function onTouchStart(event) {
+    if (!canSwipe) return;
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    if (!touch) return;
+    touchRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      t: Date.now(),
+    };
+  }
+
+  function onTouchEnd(event) {
+    if (!canSwipe || !touchRef.current) return;
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+
+    const dx = touch.clientX - touchRef.current.x;
+    const dy = touch.clientY - touchRef.current.y;
+    const dt = Math.max(1, Date.now() - touchRef.current.t);
+    const vx = (dx / dt) * 1000;
+    touchRef.current = null;
+
+    // Ignore mostly-vertical gestures so the detail sheet can still scroll.
+    if (Math.abs(dy) > Math.abs(dx) * 0.85) return;
+    if (Math.abs(dx) < SWIPE_DISTANCE && Math.abs(vx) < SWIPE_VELOCITY) return;
+
+    if (dx < 0 || vx < -SWIPE_VELOCITY) goNext();
+    else if (dx > 0 || vx > SWIPE_VELOCITY) goPrev();
+  }
+
   const handleIngredientClick = (ing) => {
     setSelectedIngredient(selectedIngredient?.name === ing.name ? null : ing);
     onIngredientTapped?.(ing);
@@ -97,17 +206,16 @@ export function DishDetailModal({
     const hero = heroRef.current;
     const scroller = scrollRef.current;
     if (!hero || !scroller) return;
-    // Show compact bar once most of the photo has scrolled away
     const threshold = Math.max(72, hero.offsetHeight * 0.55);
     setCompactHeader(scroller.scrollTop > threshold);
   }
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[var(--g-ink)]/15 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
+      <div className="guest-portal fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
         <button
           type="button"
-          className="absolute inset-0 cursor-default"
+          className="absolute inset-0 cursor-default bg-stone-900/40"
           aria-label="Close dish detail"
           onClick={onClose}
         />
@@ -116,10 +224,12 @@ export function DishDetailModal({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-10 flex w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
+          className="relative z-10 flex w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
           style={{
             maxHeight: 'min(92dvh, calc(100dvh - 0.5rem))',
           }}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
         >
           <button
             id="dish-detail-close-btn"
@@ -131,7 +241,29 @@ export function DishDetailModal({
             <X className="h-4 w-4" />
           </button>
 
-          {/* Compact sticky title — appears after the photo scrolls up */}
+          {canSwipe ? (
+            <>
+              <button
+                type="button"
+                onClick={goPrev}
+                disabled={!hasPrev}
+                className="absolute left-2 top-[42%] z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-stone-200/80 bg-white/90 text-stone-700 shadow-md backdrop-blur-md transition enabled:hover:bg-white disabled:opacity-0"
+                aria-label="Previous dish in category"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={!hasNext}
+                className="absolute right-2 top-[42%] z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-stone-200/80 bg-white/90 text-stone-700 shadow-md backdrop-blur-md transition enabled:hover:bg-white disabled:opacity-0"
+                aria-label="Next dish in category"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </>
+          ) : null}
+
           <AnimatePresence>
             {compactHeader ? (
               <motion.div
@@ -145,6 +277,7 @@ export function DishDetailModal({
                   <div className="min-w-0">
                     <p className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9A7B4F]">
                       {dish.categoryName}
+                      {canSwipe ? ` · ${categoryIndex + 1}/${categoryDishes.length}` : ''}
                     </p>
                     <h2 className="truncate font-serif text-base font-medium text-stone-900">
                       {dish.name}
@@ -158,70 +291,84 @@ export function DishDetailModal({
             ) : null}
           </AnimatePresence>
 
-          <div
-            ref={scrollRef}
-            onScroll={handleContentScroll}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar"
-          >
-            <div
-              ref={heroRef}
-              className="relative aspect-[16/11] w-full overflow-hidden bg-stone-100 sm:aspect-[16/9]"
-            >
-              {src ? (
-                <img
-                  src={src}
-                  alt={dish.name}
-                  referrerPolicy="no-referrer"
-                  className={`h-full w-full object-cover ${
-                    !dish.availability ? 'grayscale-[35%]' : ''
-                  }`}
-                />
-              ) : (
-                <div className="h-full w-full bg-gradient-to-br from-[#E8DFD3] to-[#C5A880]" />
-              )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-950/55 via-transparent to-black/20" />
-              <DishSteam
-                show={
-                  categoryShowsSteam(dish.categoryName) && dish.availability !== false
-                }
-              />
-              {dish.isSignature ? (
-                <div className="absolute bottom-3 left-3 z-10">
-                  <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#E0CDA9] backdrop-blur-md sm:px-3 sm:text-xs">
-                    Signature Dish
-                  </span>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="mb-1.5 flex items-center space-x-2">
-                      {dietMarker ? (
-                        <span
-                          className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border ${
-                            dietMarker === 'veg'
-                              ? 'border-emerald-600 bg-emerald-50/50'
-                              : 'border-rose-700 bg-rose-50/50'
-                          }`}
-                          title={dietMarker === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              dietMarker === 'veg' ? 'bg-emerald-600' : 'bg-rose-700'
-                            }`}
-                          />
-                        </span>
-                      ) : null}
-                      <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-[#9A7B4F]">
-                        {dish.categoryName}
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <AnimatePresence initial={false} custom={slideDir} mode="wait">
+              <motion.div
+                key={dish.id}
+                ref={scrollRef}
+                custom={slideDir}
+                variants={dishSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.85 }}
+                onScroll={handleContentScroll}
+                className="absolute inset-0 overflow-y-auto overscroll-contain no-scrollbar"
+              >
+                <div
+                  ref={heroRef}
+                  className="relative aspect-[16/11] w-full overflow-hidden bg-stone-100 sm:aspect-[16/9]"
+                >
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={dish.name}
+                      referrerPolicy="no-referrer"
+                      className={`h-full w-full object-cover ${
+                        !dish.availability ? 'grayscale-[35%]' : ''
+                      }`}
+                    />
+                  ) : (
+                    <div className="h-full w-full bg-gradient-to-br from-[#E8DFD3] to-[#C5A880]" />
+                  )}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-950/55 via-transparent to-black/20" />
+                  <DishSteam
+                    show={
+                      categoryShowsSteam(dish.categoryName) && dish.availability !== false
+                    }
+                  />
+                  {dish.isSignature ? (
+                    <div className="absolute bottom-3 left-3 z-10">
+                      <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#E0CDA9] backdrop-blur-md sm:px-3 sm:text-xs">
+                        Signature Dish
                       </span>
                     </div>
-                    <h2 className="font-serif text-2xl font-medium leading-tight text-stone-900 sm:text-3xl">
-                      {dish.name}
-                    </h2>
+                  ) : null}
+                  {canSwipe ? (
+                    <div className="absolute bottom-3 right-3 z-10 rounded-full bg-stone-950/70 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-white backdrop-blur-md">
+                      {categoryIndex + 1} / {categoryDishes.length}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="mb-1.5 flex items-center space-x-2">
+                          {dietMarker ? (
+                            <span
+                              className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border ${
+                                dietMarker === 'veg'
+                                  ? 'border-emerald-600 bg-emerald-50/50'
+                                  : 'border-rose-700 bg-rose-50/50'
+                              }`}
+                              title={dietMarker === 'veg' ? 'Vegetarian' : 'Non-Vegetarian'}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  dietMarker === 'veg' ? 'bg-emerald-600' : 'bg-rose-700'
+                                }`}
+                              />
+                            </span>
+                          ) : null}
+                          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-[#9A7B4F]">
+                            {dish.categoryName}
+                          </span>
+                        </div>
+                        <h2 className="font-serif text-2xl font-medium leading-tight text-stone-900 sm:text-3xl">
+                          {dish.name}
+                        </h2>
                     {dish.nativeName ? (
                       <span className="mt-0.5 block font-serif text-xs italic text-stone-400">
                         {dish.nativeName}
@@ -263,9 +410,17 @@ export function DishDetailModal({
                             key={alt.id}
                             role="button"
                             tabIndex={0}
-                            onClick={() => onSelectDish?.(alt)}
+                            onClick={() => {
+                              const nextIdx = categoryDishes.findIndex((d) => d.id === alt.id);
+                              setSlideDir(nextIdx > categoryIndex ? 1 : -1);
+                              onSelectDish?.(alt);
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') onSelectDish?.(alt);
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                const nextIdx = categoryDishes.findIndex((d) => d.id === alt.id);
+                                setSlideDir(nextIdx > categoryIndex ? 1 : -1);
+                                onSelectDish?.(alt);
+                              }
                             }}
                             className="flex cursor-pointer items-center justify-between rounded-xl border border-stone-200/80 bg-white p-3 transition-all hover:border-[#9A7B4F]"
                           >
@@ -445,9 +600,17 @@ export function DishDetailModal({
                         key={sim.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => onSelectDish?.(sim)}
+                        onClick={() => {
+                          const nextIdx = categoryDishes.findIndex((d) => d.id === sim.id);
+                          setSlideDir(nextIdx > categoryIndex ? 1 : -1);
+                          onSelectDish?.(sim);
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') onSelectDish?.(sim);
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            const nextIdx = categoryDishes.findIndex((d) => d.id === sim.id);
+                            setSlideDir(nextIdx > categoryIndex ? 1 : -1);
+                            onSelectDish?.(sim);
+                          }
                         }}
                         className="group flex cursor-pointer items-center space-x-3 rounded-xl border border-stone-200/80 bg-white p-3 transition-all hover:border-[#9A7B4F]"
                       >
@@ -476,9 +639,16 @@ export function DishDetailModal({
                 </div>
               )}
             </div>
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           <div className="shrink-0 space-y-2 border-t border-stone-200/80 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] backdrop-blur-md sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+            {canSwipe ? (
+              <p className="text-center text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">
+                Swipe for more in {dish.categoryName || 'this category'}
+              </p>
+            ) : null}
             <div className="flex min-w-0 flex-col gap-2 min-[380px]:flex-row min-[380px]:items-center">
               <button
                 id="detail-compare-btn"

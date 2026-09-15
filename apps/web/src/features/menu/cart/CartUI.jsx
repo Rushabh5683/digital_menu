@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
 import { computeExclusiveGst } from '../../../shared/lib/gst.js';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { Button } from '../../../shared/ui/Button.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
@@ -76,6 +77,8 @@ export function CartDrawer({
   );
   const displayTotal = taxEstimate.total;
 
+  useLockBodyScroll(open);
+
   if (!open) return null;
 
   async function submitCart() {
@@ -143,20 +146,20 @@ export function CartDrawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
+      className="guest-portal fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="cart-title"
     >
       <button
         type="button"
-        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
+        className="drawer-backdrop absolute inset-0 bg-stone-900/40"
         aria-label="Close cart"
         onClick={handleClose}
       />
 
-      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-[var(--g-line-strong)] bg-[var(--g-bg-base)] shadow-[0_28px_60px_rgba(60,40,15,0.22)] sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--g-line)] bg-[var(--g-bg-elevated)] px-5 py-4">
+      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--g-accent-deep)]">
               {step === 'success'
@@ -190,7 +193,7 @@ export function CartDrawer({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
           {error ? <Alert tone="error">{error}</Alert> : null}
 
           {step === 'success' && placedOrder ? (
@@ -217,14 +220,14 @@ export function CartDrawer({
 
           {step !== 'success' && cart.items.length > 0 ? (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]/80 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
                   Ordering at
                 </p>
-                <p className="mt-1 font-semibold text-[var(--ink)]">{restaurantName}</p>
-                <p className="text-sm text-[var(--muted)]">{tableLabel || 'Table —'}</p>
+                <p className="mt-1 font-semibold text-stone-900">{restaurantName}</p>
+                <p className="text-sm text-stone-500">{tableLabel || 'Table —'}</p>
                 {isAdding ? (
-                  <p className="mt-2 text-sm font-semibold text-[var(--teal)]">
+                  <p className="mt-2 text-sm font-semibold text-[#2f9e7a]">
                     Adding to order #{openDisplayNo}
                   </p>
                 ) : null}
@@ -234,33 +237,33 @@ export function CartDrawer({
                 {cart.items.map((item) => (
                   <li
                     key={item.dishId}
-                    className="flex gap-3 rounded-2xl border border-[var(--line)] bg-white/80 p-3"
+                    className="flex gap-3 rounded-2xl border border-stone-200 bg-white p-3"
                   >
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-black/[0.04]">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-stone-100">
                       {item.imageUrl ? (
                         <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                        <div className="flex h-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-stone-400">
                           Dish
                         </div>
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="font-semibold text-[var(--ink)]">{item.name}</p>
-                        <p className="shrink-0 text-sm font-bold text-[var(--teal)]">
+                        <p className="font-semibold text-stone-900">{item.name}</p>
+                        <p className="shrink-0 text-sm font-bold text-[#2f9e7a]">
                           {formatPrice(item.price * item.quantity)}
                         </p>
                       </div>
-                      <p className="mt-0.5 text-xs text-[var(--muted)]">
+                      <p className="mt-0.5 text-xs text-stone-500">
                         {formatPrice(item.price)} each
                       </p>
                       {step === 'cart' ? (
                         <div className="mt-2 flex items-center justify-between">
-                          <div className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-white p-0.5">
+                          <div className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white p-0.5">
                             <button
                               type="button"
-                              className="rounded-full p-1.5 text-[var(--ink)] hover:bg-black/[0.04]"
+                              className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
                               onClick={() => onDecrement(item.dishId)}
                               aria-label="Decrease quantity"
                             >
@@ -271,7 +274,7 @@ export function CartDrawer({
                             </span>
                             <button
                               type="button"
-                              className="rounded-full p-1.5 text-[var(--ink)] hover:bg-black/[0.04]"
+                              className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
                               onClick={() => onIncrement(item.dishId)}
                               aria-label="Increase quantity"
                             >
@@ -280,7 +283,7 @@ export function CartDrawer({
                           </div>
                           <button
                             type="button"
-                            className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-50 hover:text-[var(--danger)]"
+                            className="rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"
                             onClick={() => onRemove(item.dishId)}
                             aria-label="Remove item"
                           >
@@ -288,7 +291,7 @@ export function CartDrawer({
                           </button>
                         </div>
                       ) : (
-                        <p className="mt-2 text-sm font-semibold text-[var(--ink)]">
+                        <p className="mt-2 text-sm font-semibold text-stone-900">
                           Qty {item.quantity}
                         </p>
                       )}
@@ -297,36 +300,36 @@ export function CartDrawer({
                 ))}
               </ul>
 
-              <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3">
+              <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--muted)]">
+                  <span className="text-stone-500">
                     {isAdding ? 'Adding now' : 'Subtotal'}
                   </span>
-                  <span className="font-semibold text-[var(--ink)]">
+                  <span className="font-semibold text-stone-900">
                     {formatPrice(cart.subtotal)}
                   </span>
                 </div>
                 {!isAdding && taxEstimate.gstEnabled ? (
                   <>
-                    <div className="mt-1.5 flex items-center justify-between text-sm text-[var(--muted)]">
+                    <div className="mt-1.5 flex items-center justify-between text-sm text-stone-500">
                       <span>CGST ({taxEstimate.cgstRate}%)</span>
                       <span>{formatPrice(taxEstimate.cgstAmount)}</span>
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-sm text-[var(--muted)]">
+                    <div className="mt-1 flex items-center justify-between text-sm text-stone-500">
                       <span>SGST ({taxEstimate.sgstRate}%)</span>
                       <span>{formatPrice(taxEstimate.sgstAmount)}</span>
                     </div>
                   </>
                 ) : null}
                 {!isAdding ? (
-                  <div className="mt-2 flex items-center justify-between border-t border-[var(--line)] pt-2">
-                    <span className="font-semibold text-[var(--ink)]">Total</span>
-                    <span className="text-lg font-bold text-[var(--teal)]">
+                  <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-2">
+                    <span className="font-semibold text-stone-900">Total</span>
+                    <span className="text-lg font-bold text-[#2f9e7a]">
                       {formatPrice(displayTotal)}
                     </span>
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-[var(--muted)]">
+                  <p className="mt-2 text-xs text-stone-500">
                     These items will be added to your existing order total.
                   </p>
                 )}
@@ -337,7 +340,7 @@ export function CartDrawer({
 
         {step === 'success' && placedOrder ? (
           <div
-            className={`shrink-0 space-y-2 border-t border-[var(--line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+            className={`shrink-0 space-y-2 border-t border-stone-200 bg-[#FAF8F5] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
           >
             {!isTerminalOrderStatus(placedOrder.status) ? (
               <Button
@@ -358,7 +361,7 @@ export function CartDrawer({
 
         {step !== 'success' ? (
           <div
-            className={`shrink-0 space-y-2 border-t border-[var(--line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+            className={`shrink-0 space-y-2 border-t border-stone-200 bg-[#FAF8F5] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
           >
             {step === 'cart' && cart.items.length > 0 ? (
               <>

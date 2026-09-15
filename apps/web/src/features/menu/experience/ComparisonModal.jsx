@@ -4,6 +4,7 @@ import { X, Scale, Check, Plus, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker } from '../../../shared/constants/dietaryTags.js';
+import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 
 function categoryKeyOf(dish) {
   if (!dish) return '';
@@ -127,7 +128,10 @@ export function ComparisonModal({
     });
   }
 
-  if (!pair || !dishA || !dishB) return null;
+  const open = Boolean(pair && dishA && dishB);
+  useLockBodyScroll(open);
+
+  if (!open) return null;
 
   const { diffs, advice } = compareDishes(dishA, dishB, currency);
   const rows = diffs;
@@ -135,11 +139,11 @@ export function ComparisonModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-x-0 top-0 z-[70] flex justify-center" style={{ bottom: 0 }}>
+      <div className="guest-portal fixed inset-x-0 top-0 z-[70] flex justify-center" style={{ bottom: 0 }}>
         <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
           <button
             type="button"
-            className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
+            className="absolute inset-0 cursor-default bg-stone-900/40"
             aria-label="Close comparison"
             onClick={onClose}
           />
@@ -149,7 +153,7 @@ export function ComparisonModal({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl"
+            className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
           >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-3.5 py-3">
               <div className="flex min-w-0 items-center gap-2">
