@@ -5,6 +5,10 @@
       "destination": "https://cheerful-freedom-production-4599.up.railway.app/api/:path*"
     },
     {
+      "source": "/uploads/:path*",
+      "destination": "https://cheerful-freedom-production-4599.up.railway.app/uploads/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

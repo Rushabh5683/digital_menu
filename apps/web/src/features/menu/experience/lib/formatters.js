@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from '../../../../shared/lib/mediaUrl.js';
+
 /**
  * Format dish price using restaurant currency when provided.
  * Decimal/string prices from the API are coerced to Number.
@@ -25,7 +27,7 @@ export function formatPrice(amount, currency = 'INR', currencySymbol) {
 }
 
 export function dishImage(dish) {
-  return dish?.image || dish?.imageUrl || '';
+  return resolveMediaUrl(dish?.image || dish?.imageUrl || '');
 }
 
 export function parsePrice(price) {

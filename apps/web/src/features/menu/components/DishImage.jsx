@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 /**
  * Lazy dish image with blur-up skeleton placeholder.
@@ -14,8 +15,9 @@ export function DishImage({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const roundClass = rounded ? 'rounded-full' : '';
+  const resolvedSrc = resolveMediaUrl(src);
 
-  if (!src || failed) {
+  if (!resolvedSrc || failed) {
     return (
       <div
         className={[
@@ -40,7 +42,7 @@ export function DishImage({
         />
       ) : null}
       <img
-        src={src}
+        src={resolvedSrc}
         alt={alt}
         loading="lazy"
         decoding="async"

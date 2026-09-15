@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
 import { computeExclusiveGst } from '../../../shared/lib/gst.js';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { Button } from '../../../shared/ui/Button.jsx';
@@ -241,7 +242,11 @@ export function CartDrawer({
                   >
                     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-stone-100">
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                        <img
+                          src={resolveMediaUrl(item.imageUrl)}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
                         <div className="flex h-full items-center justify-center text-[10px] font-semibold uppercase tracking-wide text-stone-400">
                           Dish
