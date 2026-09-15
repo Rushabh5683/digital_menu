@@ -86,6 +86,7 @@ const PAYMENT_LABELS = {
   UPI_PHONEPE: 'PhonePe',
   UPI_OTHER: 'Other UPI',
   OTHER: 'Others',
+  PART: 'Part payment',
 };
 
 /**
@@ -143,10 +144,21 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
     roundOffAmount += round;
 
     const method = order.paymentMethod || 'OTHER';
-    const pay = paymentMap.get(method) || { method, count: 0, amount: 0 };
-    pay.count += 1;
-    pay.amount = money(pay.amount + total);
-    paymentMap.set(method, pay);
+    if (method === 'PART' && Array.isArray(order.paymentSplits) && order.paymentSplits.length) {
+      for (const split of order.paymentSplits) {
+        const splitMethod = split?.method || 'OTHER';
+        const splitAmount = money(split?.amount);
+        const pay = paymentMap.get(splitMethod) || { method: splitMethod, count: 0, amount: 0 };
+        pay.count += 1;
+        pay.amount = money(pay.amount + splitAmount);
+        paymentMap.set(splitMethod, pay);
+      }
+    } else {
+      const pay = paymentMap.get(method) || { method, count: 0, amount: 0 };
+      pay.count += 1;
+      pay.amount = money(pay.amount + total);
+      paymentMap.set(method, pay);
+    }
 
     const dayKey = toYmd(order.createdAt);
     const day = dayMap.get(dayKey) || {
@@ -210,6 +222,8 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
       taxAmount: money(order.taxAmount),
       paymentMethod: order.paymentMethod,
       paymentLabel: PAYMENT_LABELS[order.paymentMethod] || order.paymentMethod || '—',
+      paymentNote: order.paymentNote ?? null,
+      paymentSplits: Array.isArray(order.paymentSplits) ? order.paymentSplits : null,
       paidAt: order.paidAt,
       createdAt: order.createdAt,
       tableNumber: order.table?.tableNumber ?? null,
@@ -219,6 +233,68 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
           : null,
       itemCount: (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
     }));
+
+  const appreciationShares = await prisma.orderAppreciationShare.findMany({
+    where: {
+      createdAt: { gte: range.from, lt: range.to },
+      order: {
+        restaurantId,
+        status: 'COMPLETED',
+      },
+    },
+    include: {
+      captain: { select: { id: true, name: true } },
+      order: {
+        select: {
+          id: true,
+          orderNumber: true,
+          paymentMethod: true,
+          table: { select: { tableNumber: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const captainMap = new Map();
+  let staffAppreciationTotal = 0;
+  const staffAppreciationEntries = [];
+  for (const share of appreciationShares) {
+    const amount = money(share.amount);
+    staffAppreciationTotal = money(staffAppreciationTotal + amount);
+    const captainId = share.captainUserId;
+    const paymentMethod = share.order?.paymentMethod || null;
+    const paymentLabel = PAYMENT_LABELS[paymentMethod] || paymentMethod || '—';
+    const row = captainMap.get(captainId) || {
+      captainId,
+      captainName: share.captain?.name || 'Captain',
+      amount: 0,
+      count: 0,
+    };
+    row.amount = money(row.amount + amount);
+    row.count += 1;
+    captainMap.set(captainId, row);
+
+    staffAppreciationEntries.push({
+      id: share.id,
+      amount,
+      createdAt: share.createdAt,
+      captainId,
+      captainName: share.captain?.name || 'Captain',
+      paymentMethod,
+      paymentLabel,
+      orderId: share.order?.id || null,
+      orderNumber: share.order?.orderNumber || null,
+      tableLabel:
+        share.order?.table?.tableNumber != null
+          ? `Table ${String(share.order.table.tableNumber).padStart(2, '0')}`
+          : null,
+    });
+  }
+
+  const staffAppreciationByCaptain = [...captainMap.values()].sort(
+    (a, b) => b.amount - a.amount || a.captainName.localeCompare(b.captainName),
+  );
 
   return {
     range: {
@@ -239,11 +315,19 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
       sgstAmount: money(sgstAmount),
       roundOffAmount: money(roundOffAmount),
       averageTicket,
+      staffAppreciationTotal: money(staffAppreciationTotal),
+      staffAppreciationCount: appreciationShares.length,
     },
     payments,
     items,
     days,
     recentOrders: bills.slice(0, 40),
     bills,
+    staffAppreciation: {
+      total: money(staffAppreciationTotal),
+      count: appreciationShares.length,
+      byCaptain: staffAppreciationByCaptain,
+      entries: staffAppreciationEntries,
+    },
   };
 }

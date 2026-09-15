@@ -39,7 +39,7 @@ export function ConsiderationFunnel({ funnel, orderSummary }) {
   ];
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-[var(--line)] bg-white/90 shadow-[0_22px_50px_-34px_rgba(15,31,28,0.5)]">
+    <section className="min-w-0 overflow-hidden rounded-[1.5rem] border border-[var(--line)] bg-white/90 shadow-[0_22px_50px_-34px_rgba(15,31,28,0.5)]">
       <div
         className="border-b border-[var(--line)] px-5 py-5 sm:px-6"
         style={{
@@ -72,8 +72,8 @@ export function ConsiderationFunnel({ funnel, orderSummary }) {
         ) : null}
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="space-y-4 p-5 sm:p-6">
+      <div className="grid min-w-0 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+        <div className="min-w-0 space-y-4 p-5 sm:p-6">
           {stages.map((stage, index) => {
             const tone = STAGE_TONES[stage.key] || STAGE_TONES.attention;
             const width = Math.max(8, Math.round(((stage.count || 0) / maxCount) * 100));
@@ -109,7 +109,7 @@ export function ConsiderationFunnel({ funnel, orderSummary }) {
           })}
         </div>
 
-        <div className="border-t border-[var(--line)] bg-[var(--surface)]/70 p-5 sm:border-l sm:border-t-0 sm:p-6">
+        <div className="min-w-0 border-t border-[var(--line)] bg-[var(--surface)]/70 p-5 sm:border-l sm:border-t-0 sm:p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
             Conversion
           </p>

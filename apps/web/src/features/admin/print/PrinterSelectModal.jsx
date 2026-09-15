@@ -74,13 +74,13 @@ export function PrinterSelectModal({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
+        className="absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
         aria-label="Cancel"
         onClick={busy ? undefined : onCancel}
       />
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
-          <div>
+      <div className="relative z-10 flex max-h-[min(92dvh,640px)] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               Print bill
             </p>
@@ -99,14 +99,14 @@ export function PrinterSelectModal({
             type="button"
             disabled={busy}
             onClick={onCancel}
-            className="rounded-full border border-[var(--line)] p-2 text-[var(--muted)] hover:bg-black/[0.03] disabled:opacity-50"
+            className="rounded-full border border-[var(--line)] p-2.5 text-[var(--muted)] hover:bg-black/[0.03] disabled:opacity-50"
             aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4">
           {error ? <Alert tone="error">{error}</Alert> : null}
           {qzMissing ? (
             <a
@@ -155,7 +155,7 @@ export function PrinterSelectModal({
           </ul>
         </div>
 
-        <div className="flex gap-2 border-t border-[var(--line)] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="flex shrink-0 gap-2 border-t border-[var(--line)] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Button variant="secondary" className="flex-1" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>

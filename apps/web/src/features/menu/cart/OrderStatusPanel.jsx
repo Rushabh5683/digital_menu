@@ -1,5 +1,6 @@
 import { Check, Clock3, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
@@ -11,6 +12,7 @@ import {
 } from './orderStatus.js';
 
 const POLL_MS = 4000;
+const FOOTER_SAFE_PAD = 'pb-[max(1.25rem,env(safe-area-inset-bottom,0px))]';
 
 export function OrderStatusPanel({
   order: initialOrder,
@@ -258,16 +260,18 @@ export function MyOrderDrawer({
 }) {
   if (!open) return null;
 
-  return (
+  const terminal = order ? isTerminalOrderStatus(order.status) : true;
+
+  const sheet = (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center px-4 pb-4 sm:items-center sm:p-6"
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="my-order-title"
     >
       <button
         type="button"
-        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/35 backdrop-blur-sm"
+        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
         aria-label="Close order"
         onClick={onClose}
       />
@@ -293,7 +297,7 @@ export function MyOrderDrawer({
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {order ? (
             <OrderStatusPanel
               order={order}
@@ -305,6 +309,7 @@ export function MyOrderDrawer({
               onClose={onClose}
               onAddMore={onAddMore}
               closeLabel="Back to menu"
+              showClose={false}
             />
           ) : (
             <div className="py-12 text-center">
@@ -314,17 +319,33 @@ export function MyOrderDrawer({
               <p className="mx-auto max-w-xs text-sm leading-relaxed text-[var(--g-muted)]">
                 Place an order from your cart and you can track it here.
               </p>
-              <button
-                type="button"
-                onClick={onClose}
-                className="mt-6 rounded-full bg-gradient-to-r from-[var(--g-accent)] to-[var(--g-accent-bright)] px-6 py-2.5 text-sm font-semibold text-[var(--g-ink)] shadow-[0_10px_24px_rgba(184,140,48,0.28)] transition-all hover:opacity-95 active:scale-[0.99]"
-              >
-                Browse menu
-              </button>
             </div>
           )}
+        </div>
+        <div
+          className={`shrink-0 space-y-2 border-t border-[var(--g-line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+        >
+          {order && !terminal && typeof onAddMore === 'function' ? (
+            <button
+              type="button"
+              onClick={onAddMore}
+              className="flex h-12 w-full items-center justify-center rounded-full border border-[var(--g-accent-deep)]/35 bg-white text-sm font-semibold text-[var(--g-accent-deep)] shadow-sm transition-all hover:bg-[var(--g-accent-soft)] active:scale-[0.99]"
+            >
+              Add more items
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-12 w-full items-center justify-center rounded-full bg-gradient-to-r from-[var(--g-accent)] to-[var(--g-accent-bright)] text-sm font-semibold text-[var(--g-ink)] shadow-[0_10px_24px_rgba(184,140,48,0.28)] transition-all hover:opacity-95 active:scale-[0.99]"
+          >
+            {order ? 'Back to menu' : 'Browse menu'}
+          </button>
         </div>
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return sheet;
+  return createPortal(sheet, document.body);
 }

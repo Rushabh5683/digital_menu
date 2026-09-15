@@ -22,6 +22,7 @@ import {
   AdminQrCodesPage,
   AdminReportsPage,
   AdminSettingsPage,
+  AdminStaffAppreciationPage,
   AdminTablesPage,
 } from '../features/admin/AdminSectionPages.jsx';
 import { AdminOrderEditorPage } from '../features/admin/AdminOrderEditorPage.jsx';
@@ -57,6 +58,7 @@ export function AppRouter() {
           <Route element={<RestaurantAdminLayout />}>
             <Route path="orders" element={<AdminOrdersPage />} />
             <Route path="orders/:orderId" element={<AdminOrderEditorPage />} />
+            <Route path="staff-appreciation" element={<AdminStaffAppreciationPage />} />
 
             <Route element={<RequireRestaurantOwner />}>
               <Route index element={<AdminOverviewPage />} />

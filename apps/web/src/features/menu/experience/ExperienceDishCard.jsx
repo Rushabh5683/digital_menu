@@ -5,15 +5,19 @@ import { formatPrice, dishImage } from './lib/formatters.js';
 import { useDishAttention } from '../../analytics/useDishAttention.js';
 import { getDietMarker } from '../../../shared/constants/dietaryTags.js';
 import { DishSteam, categoryShowsSteam } from './DishSteam.jsx';
+import { ExperienceQuantityControl } from './ExperienceQuantityControl.jsx';
 
 export function ExperienceDishCard({
   dish,
   isShortlisted,
   isCompared,
+  quantity = 0,
   onOpenDetail,
   onToggleShortlist,
   onToggleCompare,
   onAddToOrder,
+  onIncrement,
+  onDecrement,
   currency = 'INR',
   analyticsSource = 'category_rail',
   showSteam,
@@ -86,8 +90,8 @@ export function ExperienceDishCard({
           )}
         </div>
 
-        <div className="flex items-start justify-between gap-2 mb-1">
-          <div className="flex items-start space-x-2 min-w-0">
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-start space-x-2">
             {dietMarker ? (
               <span
                 className={`mt-1 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-[3px] border ${
@@ -105,23 +109,23 @@ export function ExperienceDishCard({
               </span>
             ) : null}
             <div className="min-w-0">
-              <h3 className="text-lg sm:text-[19px] font-serif font-medium text-stone-900 group-hover:text-[#9A7B4F] transition-colors leading-snug truncate">
+              <h3 className="truncate font-serif text-lg font-medium leading-snug text-stone-900 transition-colors group-hover:text-[#9A7B4F] sm:text-[19px]">
                 {dish.name}
               </h3>
               {dish.nativeName ? (
-                <span className="text-[11px] text-stone-400 font-serif italic block -mt-0.5">
+                <span className="-mt-0.5 block font-serif text-[11px] italic text-stone-400">
                   {dish.nativeName}
                 </span>
               ) : null}
             </div>
           </div>
 
-          <span className="text-base sm:text-lg font-serif font-semibold text-stone-900 whitespace-nowrap pl-1">
+          <span className="whitespace-nowrap pl-1 font-serif text-base font-semibold text-stone-900 sm:text-lg">
             {formatPrice(dish.price, currency)}
           </span>
         </div>
 
-        <p className="text-xs sm:text-[13px] text-stone-600 font-normal leading-relaxed line-clamp-2 mb-3">
+        <p className="mb-3 line-clamp-2 text-xs font-normal leading-relaxed text-stone-600 sm:text-[13px]">
           {dish.description}
         </p>
       </div>
@@ -157,23 +161,22 @@ export function ExperienceDishCard({
               : 'border-stone-200 bg-white text-stone-700 hover:text-stone-900'
           }`}
         >
-          {isShortlisted ? <Check className="h-3.5 w-3.5 shrink-0" /> : <Plus className="h-3.5 w-3.5 shrink-0" />}
+          {isShortlisted ? (
+            <Check className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+          )}
           <span>{isShortlisted ? 'Saved' : 'Save to Picks'}</span>
         </button>
 
         {typeof onAddToOrder === 'function' && dish.availability !== false ? (
-          <button
+          <ExperienceQuantityControl
             id={`card-add-btn-${dish.id}`}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddToOrder(dish, e);
-            }}
-            className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-full bg-stone-950 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-white transition-colors hover:bg-stone-800 active:scale-[0.98]"
-          >
-            <Plus className="h-3.5 w-3.5 shrink-0" />
-            <span>Add</span>
-          </button>
+            quantity={quantity}
+            onAdd={() => onAddToOrder(dish)}
+            onIncrement={() => onIncrement?.(dish.id)}
+            onDecrement={() => onDecrement?.(dish.id)}
+          />
         ) : null}
       </div>
     </motion.div>

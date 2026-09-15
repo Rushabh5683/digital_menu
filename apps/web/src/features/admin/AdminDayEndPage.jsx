@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Banknote,
   CalendarRange,
-  CheckCircle2,
   CircleDollarSign,
+  KeyRound,
   LoaderCircle,
   Lock,
   MoonStar,
+  Pencil,
+  Plus,
   Receipt,
   RefreshCw,
   ShoppingBag,
@@ -20,6 +22,56 @@ import { api } from '../../shared/api/client.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { ConfirmDialog } from '../../shared/ui/Modal.jsx';
+import { ScrollTable } from '../../shared/ui/ScrollTable.jsx';
+import { EditPaymentModal } from './EditPaymentModal.jsx';
+
+const DAY_END_EDIT_KEY = 'dm_day_end_edit_date';
+const DAY_END_SESSION_UNLOCK_PREFIX = 'dm_day_end_session_unlock_';
+
+export function setDayEndEditDate(ymd) {
+  try {
+    if (ymd) sessionStorage.setItem(DAY_END_EDIT_KEY, ymd);
+    else sessionStorage.removeItem(DAY_END_EDIT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getDayEndEditDate() {
+  try {
+    return sessionStorage.getItem(DAY_END_EDIT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function sessionUnlockKey(ymd) {
+  return `${DAY_END_SESSION_UNLOCK_PREFIX}${ymd}`;
+}
+
+function markDayUnlockedInSession(ymd) {
+  try {
+    if (ymd) sessionStorage.setItem(sessionUnlockKey(ymd), '1');
+  } catch {
+    // ignore
+  }
+}
+
+function clearDayUnlockedInSession(ymd) {
+  try {
+    if (ymd) sessionStorage.removeItem(sessionUnlockKey(ymd));
+  } catch {
+    // ignore
+  }
+}
+
+function isDayUnlockedInSession(ymd) {
+  try {
+    return Boolean(ymd) && sessionStorage.getItem(sessionUnlockKey(ymd)) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function formatMoney(value) {
   return new Intl.NumberFormat('en-IN', {
@@ -108,11 +160,38 @@ function KpiCard({ icon: Icon, label, value, hint }) {
  */
 export function AdminDayEndPage() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const today = toInputDate();
-  const [day, setDay] = useState(today);
+  const [day, setDay] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('dm_day_end_selected_date');
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved) && saved <= toInputDate()) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return toInputDate();
+  });
   const [confirmClose, setConfirmClose] = useState(false);
   const [closeError, setCloseError] = useState(null);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockReason, setUnlockReason] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [editBill, setEditBill] = useState(null);
   const isToday = day === today;
+
+  function selectDay(nextDay) {
+    const value = nextDay || today;
+    setDay(value);
+    setCloseError(null);
+    try {
+      sessionStorage.setItem('dm_day_end_selected_date', value);
+    } catch {
+      // ignore
+    }
+  }
 
   const reportParams = useMemo(() => {
     if (isToday) return { preset: 'today' };
@@ -137,6 +216,14 @@ export function AdminDayEndPage() {
     placeholderData: keepPreviousData,
   });
 
+  useEffect(() => {
+    if (location.hash !== '#bills' || reportQuery.isLoading) return undefined;
+    const timer = window.setTimeout(() => {
+      document.getElementById('bills')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [location.hash, reportQuery.isLoading, reportQuery.dataUpdatedAt]);
+
   const openTicketsQuery = useQuery({
     queryKey: ['admin', 'day-end', 'open-tickets'],
     queryFn: async () => {
@@ -146,7 +233,11 @@ export function AdminDayEndPage() {
       });
       return payload.orders || [];
     },
-    refetchInterval: 20_000,
+    // Auto-detect open tables without requiring Refresh.
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const cancelledQuery = useQuery({
@@ -166,6 +257,8 @@ export function AdminDayEndPage() {
     onSuccess: async () => {
       setConfirmClose(false);
       setCloseError(null);
+      setDayEndEditDate(null);
+      clearDayUnlockedInSession(day);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] }),
         statusQuery.refetch(),
@@ -175,6 +268,48 @@ export function AdminDayEndPage() {
     },
     onError: (error) => {
       setCloseError(error?.message || 'Could not end day operations');
+    },
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (businessDate) =>
+      api.unlockAdminDayEnd({
+        businessDate,
+        password: unlockPassword,
+        reason: unlockReason.trim() || undefined,
+      }),
+    onSuccess: async (payload, businessDate) => {
+      const unlockedDay =
+        payload?.dayEnd?.businessDate || businessDate || day;
+      selectDay(unlockedDay);
+      setUnlockOpen(false);
+      setUnlockPassword('');
+      setUnlockReason('');
+      setUnlockError('');
+      markDayUnlockedInSession(unlockedDay);
+      setDayEndEditDate(unlockedDay);
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] });
+      await queryClient.invalidateQueries({
+        queryKey: ['admin', 'day-end', 'status', unlockedDay],
+      });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'day-end', 'sales'] });
+    },
+    onError: (error) => {
+      setUnlockError(error?.message || 'Could not unlock this day');
+    },
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: ({ orderId, payload }) => api.updateAdminOrderPayment(orderId, payload),
+    onSuccess: async () => {
+      setEditBill(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] }),
+        reportQuery.refetch(),
+      ]);
+    },
+    onError: (error) => {
+      setCloseError(error?.message || 'Could not update payment');
     },
   });
 
@@ -188,8 +323,28 @@ export function AdminDayEndPage() {
   const dayEnd = statusQuery.data;
   const isClosed = Boolean(dayEnd?.isClosed);
   const closeInfo = dayEnd?.close;
-  const canClose = Boolean(dayEnd?.canClose) && !isClosed;
+  // Password unlock is per browser session — closing the tab requires password again.
+  const canEdit =
+    !isClosed ||
+    (Boolean(dayEnd?.isUnlocked) && isDayUnlockedInSession(day));
+  const isLocked = isClosed && !canEdit;
+  const canClose = Boolean(dayEnd?.canClose) && canEdit;
   const hasOpenTickets = openTickets.length > 0;
+
+  // Drop stale close errors once open tickets clear themselves.
+  useEffect(() => {
+    if (!hasOpenTickets && closeError?.includes('open ticket')) {
+      setCloseError(null);
+    }
+  }, [hasOpenTickets, closeError]);
+
+  // Drop edit session when the server lock window ends (password required next unlock).
+  useEffect(() => {
+    if (!dayEnd?.isClosed) return;
+    if (dayEnd.isUnlocked) return;
+    clearDayUnlockedInSession(day);
+    if (getDayEndEditDate() === day) setDayEndEditDate(null);
+  }, [dayEnd?.isClosed, dayEnd?.isUnlocked, day]);
 
   function refreshAll() {
     statusQuery.refetch();
@@ -224,7 +379,7 @@ export function AdminDayEndPage() {
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
             Settled bills for this business day — payments, items, and bill list. End day operations
-            when the kitchen is clear, like PetPooja Day End.
+            when the kitchen is clear.
           </p>
         </div>
 
@@ -235,10 +390,7 @@ export function AdminDayEndPage() {
               type="date"
               value={day}
               max={today}
-              onChange={(e) => {
-                setDay(e.target.value || today);
-                setCloseError(null);
-              }}
+              onChange={(e) => selectDay(e.target.value || today)}
               className="bg-transparent text-sm font-semibold text-[var(--ink)] outline-none"
             />
           </label>
@@ -254,22 +406,54 @@ export function AdminDayEndPage() {
         </div>
       </header>
 
-      {isClosed && closeInfo ? (
-        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-emerald-200/90 bg-emerald-50/80 px-4 py-3.5 text-emerald-950">
-          <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-700" />
+      {isLocked && closeInfo ? (
+        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200/90 bg-amber-50/80 px-4 py-3.5 text-amber-950">
+          <Lock size={20} className="mt-0.5 shrink-0 text-amber-700" />
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">Day operations closed</p>
-            <p className="mt-1 text-sm text-emerald-900/85">
+            <p className="font-semibold">Day locked</p>
+            <p className="mt-1 text-sm text-amber-900/85">
               Closed at {formatDateTime(closeInfo.closedAt)}
               {closeInfo.closedBy?.name ? ` by ${closeInfo.closedBy.name}` : ''}
-              . Sales snapshot is locked for this business date.
+              . Enter your admin password each time you want to edit this date.
             </p>
+            <Button
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                setUnlockError('');
+                setUnlockPassword('');
+                setUnlockReason('');
+                setUnlockOpen(true);
+              }}
+            >
+              <KeyRound size={14} />
+              Unlock to edit
+            </Button>
           </div>
-          <Lock size={16} className="shrink-0 text-emerald-700/70" />
         </div>
       ) : null}
 
-      {openTickets.length > 0 && !isClosed ? (
+      {canEdit && !isToday ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/5 px-4 py-3 text-sm text-[var(--ink)]">
+          <div>
+            <p className="font-semibold">Editing {formatDayHeading(day)}</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              New or corrected bills will be saved for this date only. End day again when finished
+              — password will be required next time you edit this date.
+            </p>
+          </div>
+          <Link
+            to="/admin/orders"
+            onClick={() => setDayEndEditDate(day)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-black/[0.02]"
+          >
+            <Plus size={14} />
+            Add missed bill
+          </Link>
+        </div>
+      ) : null}
+
+      {openTickets.length > 0 && canEdit ? (
         <Alert tone="warning">
           <div className="flex flex-wrap items-start gap-3">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
@@ -288,9 +472,11 @@ export function AdminDayEndPage() {
                       className="inline-flex rounded-full border border-amber-300/80 bg-white/70 px-2.5 py-1 text-xs font-semibold text-amber-950 hover:bg-white"
                     >
                       #{formatOrderNo(order.orderNumber)} · {order.status}
-                      {order.table?.tableNumber != null
-                        ? ` · T${String(order.table.tableNumber).padStart(2, '0')}`
-                        : ''}
+                      {order.tableLabel
+                        ? ` · ${order.tableLabel}`
+                        : order.tableNumber != null
+                          ? ` · T${String(order.tableNumber).padStart(2, '0')}`
+                          : ''}
                     </Link>
                   </li>
                 ))}
@@ -304,9 +490,9 @@ export function AdminDayEndPage() {
             </div>
           </div>
         </Alert>
-      ) : !isClosed ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
-          <MoonStar size={16} />
+      ) : canEdit ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
+          <MoonStar size={16} className="shrink-0" />
           <span className="font-semibold">No open kitchen tickets</span>
           <span className="text-emerald-800/80">— ready to end day operations.</span>
         </div>
@@ -345,7 +531,7 @@ export function AdminDayEndPage() {
 
       {summary ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               icon={CircleDollarSign}
               label="Gross sales"
@@ -377,7 +563,7 @@ export function AdminDayEndPage() {
           </div>
 
           {summary.cgstAmount > 0 || summary.sgstAmount > 0 || summary.roundOffAmount ? (
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm">
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
                   CGST
@@ -438,15 +624,27 @@ export function AdminDayEndPage() {
             </section>
 
             <section className="rounded-2xl border border-[var(--line)] bg-white/95 p-5 shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
-              <div className="mb-4 flex items-center gap-2">
-                <Utensils size={16} className="text-[var(--teal)]" />
-                <h3 className="text-lg font-semibold text-[var(--ink)]">Item-wise sales</h3>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Utensils size={16} className="text-[var(--teal)]" />
+                  <h3 className="text-lg font-semibold text-[var(--ink)]">Item-wise sales</h3>
+                </div>
+                <Link
+                  to={
+                    isToday
+                      ? '/admin/reports?tab=items&preset=today'
+                      : `/admin/reports?tab=items&preset=custom&from=${encodeURIComponent(day)}&to=${encodeURIComponent(day)}`
+                  }
+                  className="shrink-0 text-sm font-semibold text-[var(--teal)] hover:underline"
+                >
+                  View all
+                </Link>
               </div>
               {items.length === 0 ? (
                 <p className="py-8 text-center text-sm text-[var(--muted)]">No items sold.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[20rem] text-left text-sm">
+                <ScrollTable minWidthClass="min-w-[20rem]">
+                  <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
                         <th className="pb-2 font-semibold">Item</th>
@@ -455,7 +653,7 @@ export function AdminDayEndPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.slice(0, 40).map((item) => (
+                      {items.slice(0, 5).map((item) => (
                         <tr
                           key={item.dishId || item.name}
                           className="border-b border-[var(--line)]/70 last:border-0"
@@ -469,12 +667,15 @@ export function AdminDayEndPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollTable>
               )}
             </section>
           </div>
 
-          <section className="rounded-2xl border border-[var(--line)] bg-white/95 p-5 shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
+          <section
+            id="bills"
+            className="scroll-mt-24 rounded-2xl border border-[var(--line)] bg-white/95 p-5 shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]"
+          >
             <div className="mb-4 flex items-center gap-2">
               <Receipt size={16} className="text-[var(--teal)]" />
               <h3 className="text-lg font-semibold text-[var(--ink)]">
@@ -484,15 +685,17 @@ export function AdminDayEndPage() {
             {bills.length === 0 ? (
               <p className="py-8 text-center text-sm text-[var(--muted)]">No settled bills.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[32rem] text-left text-sm">
+              <ScrollTable minWidthClass="min-w-[40rem]">
+                <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
                       <th className="pb-2 font-semibold">Bill</th>
+                      <th className="pb-2 font-semibold">Order ID</th>
                       <th className="pb-2 font-semibold">Table</th>
                       <th className="pb-2 font-semibold">Time</th>
                       <th className="pb-2 font-semibold">Pay</th>
                       <th className="pb-2 font-semibold">Total</th>
+                      {!canEdit ? null : <th className="pb-2 font-semibold"> </th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -509,6 +712,15 @@ export function AdminDayEndPage() {
                             {bill.itemCount} item{bill.itemCount === 1 ? '' : 's'}
                           </span>
                         </td>
+                        <td className="py-2.5 pr-3">
+                          <Link
+                            to={`/admin/orders/${bill.id}`}
+                            className="font-mono text-xs font-semibold text-[var(--ink)] hover:text-[var(--teal)] hover:underline"
+                            title={bill.orderNumber || bill.id}
+                          >
+                            {bill.orderNumber || bill.id || '—'}
+                          </Link>
+                        </td>
                         <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
                           {bill.tableLabel || '—'}
                         </td>
@@ -521,11 +733,23 @@ export function AdminDayEndPage() {
                         <td className="py-2.5 font-semibold text-[var(--ink)]">
                           {formatMoney(bill.total)}
                         </td>
+                        {canEdit ? (
+                          <td className="py-2.5 pl-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setEditBill(bill)}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-[var(--teal)] hover:bg-[var(--teal)]/10"
+                            >
+                              <Pencil size={12} />
+                              Edit pay
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollTable>
             )}
           </section>
 
@@ -557,12 +781,12 @@ export function AdminDayEndPage() {
         </>
       ) : null}
 
-      {!isClosed && typeof document !== 'undefined'
+      {canEdit && typeof document !== 'undefined'
         ? createPortal(
-            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 lg:pl-[270px]">
-              <div className="pointer-events-auto border-t border-[var(--line)] bg-[var(--surface-elevated)]/95 px-4 py-3 shadow-[0_-12px_40px_-28px_rgba(15,31,28,0.45)] backdrop-blur-md">
+            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 w-full lg:pl-[var(--admin-sidebar-width)]">
+              <div className="pointer-events-auto border-t border-[var(--line)] bg-[var(--surface-elevated)]/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-28px_rgba(15,31,28,0.45)] backdrop-blur-md">
                 <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 text-sm text-[var(--muted)]">
+                  <div className="min-w-0 flex-1 text-sm text-[var(--muted)]">
                     <p className="font-semibold text-[var(--ink)]">End day operations</p>
                     <p className="mt-0.5">
                       {hasOpenTickets
@@ -572,6 +796,7 @@ export function AdminDayEndPage() {
                   </div>
                   <Button
                     size="md"
+                    className="w-full shrink-0 sm:w-auto"
                     disabled={
                       !canClose ||
                       hasOpenTickets ||
@@ -602,13 +827,112 @@ export function AdminDayEndPage() {
       <ConfirmDialog
         open={confirmClose}
         title="End day operations?"
-        message={`This will close ${formatDayHeading(day)} and save a sales snapshot (gross ${formatMoney(summary?.grossSales)}, ${summary?.orderCount || 0} bills). You won’t be able to close this date again.`}
+        message={`This will close ${formatDayHeading(day)} and save a sales snapshot (gross ${formatMoney(summary?.grossSales)}, ${summary?.orderCount || 0} bills). You can unlock later with your admin password if a bill was missed.`}
         confirmLabel="End Day Operations"
         loading={closeMutation.isPending}
         onClose={() => {
           if (!closeMutation.isPending) setConfirmClose(false);
         }}
         onConfirm={() => closeMutation.mutate()}
+      />
+
+      {unlockOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+              <button
+                type="button"
+                className="absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
+                aria-label="Cancel"
+                onClick={() => !unlockMutation.isPending && setUnlockOpen(false)}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                className="relative z-10 w-full max-w-md rounded-3xl border border-[var(--line)] bg-[var(--surface-elevated)] p-5 shadow-[0_30px_80px_-40px_rgba(15,31,28,0.45)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
+                  Unlock day end
+                </p>
+                <h3
+                  className="mt-1 text-xl text-[var(--ink)]"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  {formatDayHeading(day)}
+                </h3>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Enter your restaurant admin password to edit bills for this date.
+                </p>
+                <label className="mt-4 block">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Password
+                  </span>
+                  <input
+                    type="password"
+                    autoFocus
+                    value={unlockPassword}
+                    disabled={unlockMutation.isPending}
+                    onChange={(e) => setUnlockPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && unlockPassword && !unlockMutation.isPending) {
+                        unlockMutation.mutate(day);
+                      }
+                    }}
+                    className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                  />
+                </label>
+                <label className="mt-3 block">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Reason (optional)
+                  </span>
+                  <input
+                    value={unlockReason}
+                    disabled={unlockMutation.isPending}
+                    onChange={(e) => setUnlockReason(e.target.value)}
+                    placeholder="e.g. Missed Table 04 bill"
+                    maxLength={300}
+                    className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                  />
+                </label>
+                {unlockError ? <p className="mt-2 text-sm text-red-600">{unlockError}</p> : null}
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={unlockMutation.isPending}
+                    onClick={() => setUnlockOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={unlockMutation.isPending || !unlockPassword}
+                    onClick={() => unlockMutation.mutate(day)}
+                  >
+                    {unlockMutation.isPending ? 'Unlocking…' : 'Unlock day'}
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      <EditPaymentModal
+        open={Boolean(editBill)}
+        billLabel={
+          editBill
+            ? `#${formatOrderNo(editBill.orderNumber)} · ${editBill.tableLabel || 'Table'} · ${formatMoney(editBill.total)}`
+            : ''
+        }
+        orderTotal={editBill ? Number(editBill.total || 0) : 0}
+        initialMethod={editBill?.paymentMethod || 'CASH'}
+        initialNote={editBill?.paymentNote || ''}
+        initialSplits={editBill?.paymentSplits || null}
+        busy={paymentMutation.isPending}
+        onCancel={() => !paymentMutation.isPending && setEditBill(null)}
+        onConfirm={(payload) =>
+          paymentMutation.mutate({ orderId: editBill.id, payload })
+        }
       />
     </div>
   );

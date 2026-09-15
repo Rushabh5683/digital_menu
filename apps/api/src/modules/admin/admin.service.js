@@ -8,6 +8,7 @@ import {
   adminRemoveOrderItem,
   adminStartOrderForTable,
   adminUpdateOrderItemQuantity,
+  updateOrderPayment,
   updateOrderStatus,
 } from '../order/order.service.js';
 import { computeExclusiveGst } from '../order/orderTax.js';
@@ -36,6 +37,8 @@ function serializeOrder(order, { includeItems = false } = {}) {
     billPrintedAt: order.billPrintedAt ?? null,
     paymentMethod: order.paymentMethod ?? null,
     paymentNote: order.paymentNote ?? null,
+    paymentSplits: Array.isArray(order.paymentSplits) ? order.paymentSplits : null,
+    staffAppreciationAmount: Number(order.staffAppreciationAmount ?? 0),
     paidAt: order.paidAt ?? null,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -126,14 +129,14 @@ function optionalTrimmed(value, max) {
 
 function optionalPhone(value) {
   if (value == null || value === '') return null;
-  const phone = String(value).trim();
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 7 || digits.length > 15) {
-    throw new AppError('Enter a valid phone number', 400, {
-      fields: { phone: 'Enter a valid phone number' },
+  const digits = String(value).replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length !== 10) {
+    throw new AppError('Phone number must be exactly 10 digits', 400, {
+      fields: { phone: 'Phone number must be exactly 10 digits' },
     });
   }
-  return phone.slice(0, 40);
+  return digits;
 }
 
 function optionalEmail(value) {
@@ -225,16 +228,51 @@ export function validateAdminRestaurantProfile(body = {}) {
   }
 
   if (body.gstin !== undefined) {
-    const gstin = optionalTrimmed(body.gstin, 15);
-    if (gstin && !/^[0-9A-Z]{15}$/i.test(gstin)) {
-      fields.gstin = 'GSTIN must be 15 characters';
+    const raw = typeof body.gstin === 'string' ? body.gstin.trim().toUpperCase() : '';
+    const gstin = raw ? raw.slice(0, 15) : null;
+    const gstinPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+    if (gstin && !gstinPattern.test(gstin)) {
+      fields.gstin = 'Enter a valid GSTIN (e.g. 27AABCU9603R1ZM)';
     } else {
-      data.gstin = gstin ? gstin.toUpperCase() : null;
+      data.gstin = gstin;
     }
   }
 
   if (body.fssaiLicense !== undefined) {
-    data.fssaiLicense = optionalTrimmed(body.fssaiLicense, 40);
+    const raw = typeof body.fssaiLicense === 'string' ? body.fssaiLicense.trim() : '';
+    if (!raw) {
+      data.fssaiLicense = null;
+    } else {
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length !== 14) {
+        fields.fssaiLicense = 'FSSAI licence must be exactly 14 digits';
+      } else {
+        data.fssaiLicense = digits;
+      }
+    }
+  }
+
+  const gstEnabled =
+    data.gstEnabled !== undefined ? data.gstEnabled : Boolean(body.gstEnabled);
+  if (gstEnabled) {
+    const gstinValue =
+      data.gstin !== undefined
+        ? data.gstin
+        : typeof body.gstin === 'string'
+          ? body.gstin.trim().toUpperCase()
+          : '';
+    const fssaiValue =
+      data.fssaiLicense !== undefined
+        ? data.fssaiLicense
+        : typeof body.fssaiLicense === 'string'
+          ? body.fssaiLicense.replace(/\D/g, '')
+          : '';
+    if (!gstinValue) {
+      fields.gstin = 'GSTIN is required when GST is enabled';
+    }
+    if (!fssaiValue) {
+      fields.fssaiLicense = 'FSSAI licence no. is required when GST is enabled';
+    }
   }
 
   if (body.billThanksMessage !== undefined) {
@@ -489,9 +527,13 @@ export async function getAdminDashboard(restaurantId) {
       _sum: { total: true },
     }),
     prisma.order.findMany({
-      where: { restaurantId },
+      where: {
+        restaurantId,
+        // Same business day as Day End (local midnight → now), before closeout.
+        createdAt: { gte: today },
+      },
       orderBy: { createdAt: 'desc' },
-      take: 8,
+      take: 5,
       include: {
         table: { select: { tableNumber: true } },
         _count: { select: { items: true } },
@@ -590,7 +632,8 @@ export async function listAdminOrders(restaurantId, query = {}) {
     await Promise.all([
       prisma.order.findMany({
         where,
-        orderBy: { createdAt: 'asc' },
+        // Newest first so a 200-cap prefers current tickets over ancient open ones.
+        orderBy: { createdAt: 'desc' },
         take,
         include: {
           table: { select: { tableNumber: true, name: true } },
@@ -655,6 +698,19 @@ export async function updateAdminOrderStatus(restaurantId, orderId, status, extr
     restaurantId,
     paymentMethod: extras.paymentMethod,
     paymentNote: extras.paymentNote,
+    paymentSplits: extras.paymentSplits,
+    staffAppreciationAmount: extras.staffAppreciationAmount,
+    appreciationCaptainIds: extras.appreciationCaptainIds,
+    businessDate: extras.businessDate,
+  });
+}
+
+export async function updateAdminOrderPayment(restaurantId, orderId, extras = {}) {
+  return updateOrderPayment(orderId, {
+    restaurantId,
+    paymentMethod: extras.paymentMethod,
+    paymentNote: extras.paymentNote,
+    paymentSplits: extras.paymentSplits,
   });
 }
 
@@ -701,6 +757,7 @@ export async function startAdminTableOrder(restaurantId, body = {}) {
   return adminStartOrderForTable(restaurantId, {
     tableId: body.tableId,
     tableNumber: body.tableNumber,
+    businessDate: body.businessDate,
   });
 }
 

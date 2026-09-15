@@ -25,7 +25,7 @@ export function Modal({ open, title, subtitle, onClose, children, wide = false }
       <button
         type="button"
         aria-label="Close dialog"
-        className="drawer-backdrop absolute inset-0 bg-[var(--ink)]/50 backdrop-blur-[2px]"
+        className="drawer-backdrop absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
@@ -35,21 +35,29 @@ export function Modal({ open, title, subtitle, onClose, children, wide = false }
           wide ? 'sm:max-w-3xl' : 'sm:max-w-xl'
         }`}
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4 sm:px-6">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4 sm:gap-4 sm:px-6">
+          <div className="min-w-0 flex-1">
             <h2
-              className="text-xl tracking-tight text-[var(--ink)]"
+              className="text-lg tracking-tight text-[var(--ink)] sm:text-xl"
               style={{ fontFamily: 'var(--font-display)' }}
             >
               {title}
             </h2>
             {subtitle ? <p className="mt-1 text-sm text-[var(--muted)]">{subtitle}</p> : null}
           </div>
-          <Button variant="secondary" size="sm" className="!p-2" onClick={onClose} aria-label="Close">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="!min-h-10 !min-w-10 shrink-0 !p-2"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <X size={16} />
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-5">
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
@@ -69,12 +77,13 @@ export function ConfirmDialog({
   return (
     <Modal open={open} title={title} onClose={loading ? undefined : onClose}>
       <p className="text-sm leading-relaxed text-[var(--muted)]">{message}</p>
-      <div className="mt-6 flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" disabled={loading} onClick={onClose}>
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        <Button variant="secondary" className="w-full sm:w-auto" disabled={loading} onClick={onClose}>
           Cancel
         </Button>
         <Button
           variant={danger ? 'danger' : 'primary'}
+          className="w-full sm:w-auto"
           disabled={loading}
           onClick={onConfirm}
         >

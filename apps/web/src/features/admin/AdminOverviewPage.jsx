@@ -73,9 +73,9 @@ export function AdminOverviewPage() {
   const { restaurant, kpis, recentOrders, attention, insights } = dashboardQuery.data;
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">
             Overview
           </p>
@@ -93,7 +93,7 @@ export function AdminOverviewPage() {
         <StatusBadge status={restaurant.status} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard icon={ClipboardList} label="Today's orders" value={kpis.ordersToday} />
         <KpiCard icon={Activity} label="Pending orders" value={kpis.pendingOrders} tone="warning" />
         <KpiCard icon={Wallet} label="Today's revenue" value={formatMoney(kpis.revenueToday)} />
@@ -138,7 +138,7 @@ export function AdminOverviewPage() {
             Quick actions
           </h3>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <QuickAction to="/admin/dishes" icon={Grid2x2} label="Add Dish" />
           <QuickAction to="/admin/categories" icon={Layers3} label="Add Category" />
           <QuickAction to="/admin/tables" icon={Table2} label="Add Table" />
@@ -146,20 +146,23 @@ export function AdminOverviewPage() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-2">
+        <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-lg text-[var(--ink)]" style={{ fontFamily: 'var(--font-subheading)' }}>
               Recent orders
             </h3>
-            <Link to="/admin/orders" className="text-sm font-semibold text-[var(--teal)] hover:underline">
+            <Link
+              to="/admin/day-end#bills"
+              className="text-sm font-semibold text-[var(--teal)] hover:underline"
+            >
               View all
             </Link>
           </div>
           {recentOrders.length === 0 ? (
             <EmptyBlock
-              title="No orders yet"
-              text="When guests place orders from table QR menus, they’ll appear here in real time."
+              title="No orders today"
+              text="Orders placed today (before day end) will appear here. View all opens today’s bills on Day End."
               action={{ to: '/admin/qr-codes', label: 'Set up QR codes' }}
             />
           ) : (
@@ -185,8 +188,8 @@ export function AdminOverviewPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-lg text-[var(--ink)]" style={{ fontFamily: 'var(--font-subheading)' }}>
               Customer attention
             </h3>
@@ -332,9 +335,9 @@ function EmptyBlock({ title, text, action }) {
 
 function OverviewSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="h-16 w-72 animate-pulse rounded-xl bg-black/5" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="min-w-0 space-y-6">
+      <div className="h-16 max-w-72 animate-pulse rounded-xl bg-black/5" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 7 }).map((_, index) => (
           <div key={index} className="h-32 animate-pulse rounded-2xl bg-black/5" />
         ))}

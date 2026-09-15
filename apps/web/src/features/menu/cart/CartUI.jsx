@@ -1,12 +1,16 @@
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
 import { computeExclusiveGst } from '../../../shared/lib/gst.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { Button } from '../../../shared/ui/Button.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
-import { formatOrderDisplayNumber } from './orderStatus.js';
+import { formatOrderDisplayNumber, isTerminalOrderStatus } from './orderStatus.js';
 import { OrderStatusPanel } from './OrderStatusPanel.jsx';
+
+/** Home-indicator clearance for cart footer actions. */
+const FOOTER_SAFE_PAD = 'pb-[max(1.25rem,env(safe-area-inset-bottom,0px))]';
 
 export function CartBar({ itemCount, total, onOpen, hasOpenOrder }) {
   if (itemCount <= 0) return null;
@@ -98,9 +102,15 @@ export function CartDrawer({
         try {
           result = await api.placeOrder(payload);
         } catch (err) {
-          // Table already has an open ticket — append instead.
-          const existing = err.body?.details?.openOrder;
-          if (err.status === 409 && existing?.id) {
+          // Same-day open ticket only — never auto-append to prior-day bills
+          // (those stay hidden from Live Orders' today filter / must be settled).
+          const details = err.body?.details;
+          const existing = details?.openOrder;
+          if (
+            err.status === 409 &&
+            details?.code === 'OPEN_ORDER_EXISTS' &&
+            existing?.id
+          ) {
             result = await api.addOrderItems(existing.id, payload);
             added = true;
           } else {
@@ -131,16 +141,16 @@ export function CartDrawer({
     onClose();
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-6"
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="cart-title"
     >
       <button
         type="button"
-        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/35 backdrop-blur-[2px]"
+        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
         aria-label="Close cart"
         onClick={handleClose}
       />
@@ -197,6 +207,7 @@ export function CartDrawer({
                 handleClose();
               }}
               closeLabel="Back to menu"
+              showClose={false}
             />
           ) : null}
 
@@ -324,8 +335,31 @@ export function CartDrawer({
           ) : null}
         </div>
 
+        {step === 'success' && placedOrder ? (
+          <div
+            className={`shrink-0 space-y-2 border-t border-[var(--line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+          >
+            {!isTerminalOrderStatus(placedOrder.status) ? (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => {
+                  handleClose();
+                }}
+              >
+                Add more items
+              </Button>
+            ) : null}
+            <Button className="w-full" size="lg" onClick={handleClose}>
+              Back to menu
+            </Button>
+          </div>
+        ) : null}
+
         {step !== 'success' ? (
-          <div className="shrink-0 space-y-2 border-t border-[var(--line)] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div
+            className={`shrink-0 space-y-2 border-t border-[var(--line)] bg-[var(--g-bg-base)] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
+          >
             {step === 'cart' && cart.items.length > 0 ? (
               <>
                 <Button className="w-full" size="lg" onClick={() => setStep('review')}>
@@ -374,7 +408,8 @@ export function CartDrawer({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

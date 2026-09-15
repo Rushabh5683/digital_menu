@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronUp, Pause, Play, Sparkles } from 'lucide-react';
+import { ChevronUp, Pause, Sparkles } from 'lucide-react';
 
-const SPLASH_MS = 4500;
+const SPLASH_MS = 4200;
 const EXIT_MS = 520;
 const ACCENT = '#E85D24';
 const INK = '#1C1917';
@@ -16,22 +16,26 @@ function shortLocation(address) {
 }
 
 /**
- * Welcome splash — matches the reference layout exactly.
- * Uses restaurant logo in place of the illustration.
+ * Welcome splash shown immediately on QR open.
+ * Hold anywhere (except Skip / Explore) to pause the countdown; release to continue.
+ * Auto-enter waits until `canFinish` (menu data ready) and the timer completes.
  */
 export function MenuEntrySplash({
   restaurant,
   tableLabel,
   durationMs = SPLASH_MS,
+  canFinish = true,
   onEnter,
 }) {
-  const [paused, setPaused] = useState(false);
+  const [holding, setHolding] = useState(false);
   const [remainingMs, setRemainingMs] = useState(durationMs);
+  const [timerDone, setTimerDone] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [entered, setEntered] = useState(false);
   const enteredRef = useRef(false);
   const remainingRef = useRef(durationMs);
   const lastTickRef = useRef(null);
+  const timerDoneRef = useRef(false);
 
   const finishEnter = () => {
     if (enteredRef.current) return;
@@ -44,12 +48,14 @@ export function MenuEntrySplash({
   };
 
   useEffect(() => {
-    remainingRef.current = durationMs;
-    setRemainingMs(durationMs);
-  }, [durationMs]);
+    if (timerDone && canFinish && !exiting) {
+      finishEnter();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerDone, canFinish, exiting]);
 
   useEffect(() => {
-    if (paused || exiting) {
+    if (holding || exiting || timerDoneRef.current) {
       lastTickRef.current = null;
       return undefined;
     }
@@ -64,7 +70,8 @@ export function MenuEntrySplash({
       remainingRef.current = next;
       setRemainingMs(next);
       if (next <= 0) {
-        finishEnter();
+        timerDoneRef.current = true;
+        setTimerDone(true);
         return;
       }
       frameId = requestAnimationFrame(tick);
@@ -72,8 +79,7 @@ export function MenuEntrySplash({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paused, exiting]);
+  }, [holding, exiting]);
 
   if (entered) return null;
 
@@ -87,35 +93,50 @@ export function MenuEntrySplash({
   const accentLine = restaurant?.brandTagline?.trim()
     ? `${tablePart} · ${restaurant.brandTagline.trim().toUpperCase()}`
     : tablePart;
+  const logoSrc = restaurant?.logo || restaurant?.logoUrl || null;
+
+  const setHold = (value) => {
+    if (exiting || timerDoneRef.current) return;
+    setHolding(value);
+  };
+
+  const holdHandlers = {
+    onPointerDown: (event) => {
+      if (event.button != null && event.button !== 0) return;
+      setHold(true);
+    },
+    onPointerUp: () => setHold(false),
+    onPointerCancel: () => setHold(false),
+    onPointerLeave: () => setHold(false),
+  };
 
   return (
     <div
-      className="guest-menu guest-menu--experience fixed inset-0 z-[80]"
+      className="guest-menu guest-menu--experience fixed inset-0 z-[80] select-none touch-manipulation"
       style={{
         opacity: exiting ? 0 : 1,
-        transform: exiting ? 'translateY(-18%)' : 'translateY(0)',
+        transform: exiting ? 'translateY(-12%)' : 'translateY(0)',
         transition: `opacity ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
         pointerEvents: exiting ? 'none' : 'auto',
-        willChange: 'transform, opacity',
+        background: BG,
       }}
+      {...holdHandlers}
     >
       <div
         className="guest-experience-shell relative mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col overflow-hidden"
         style={{ background: BG }}
       >
-        {/* Soft atmosphere — subtle like reference */}
         <div className="pointer-events-none absolute inset-0" aria-hidden>
           <div
-            className="absolute -left-16 -top-10 h-56 w-56 rounded-full opacity-40 blur-[70px]"
+            className="absolute -left-16 -top-10 h-56 w-56 rounded-full opacity-30 blur-[60px]"
             style={{ background: `${ACCENT}22` }}
           />
           <div
-            className="absolute -bottom-8 -right-12 h-52 w-52 rounded-full opacity-35 blur-[70px]"
+            className="absolute -bottom-8 -right-12 h-52 w-52 rounded-full opacity-25 blur-[60px]"
             style={{ background: `${ACCENT}18` }}
           />
         </div>
 
-        {/* Header */}
         <div className="relative z-10 flex items-start justify-between gap-3 px-5 pb-2 pt-[max(1.1rem,env(safe-area-inset-top))]">
           <p
             className="flex min-w-0 items-center gap-2 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
@@ -129,57 +150,32 @@ export function MenuEntrySplash({
           </p>
           <button
             type="button"
-            onClick={finishEnter}
+            onClick={(event) => {
+              event.stopPropagation();
+              finishEnter();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
             className="shrink-0 rounded-full border border-stone-200/90 bg-[#F3F1ED] px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-600 transition active:scale-[0.98]"
           >
             Skip to menu
           </button>
         </div>
 
-        {/* Center brand block */}
         <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 text-center">
-          {/* Perfect circle — black logo plates keyed out via SVG filter */}
           <div
             className="relative h-[8.5rem] w-[8.5rem] shrink-0 overflow-hidden rounded-full bg-white"
             style={{
               boxShadow: `0 0 0 1px rgba(232,93,36,0.18), 0 18px 40px -22px rgba(28,25,23,0.28)`,
-              animation: exiting ? undefined : 'menu-splash-in 0.7s ease both',
+              animation: exiting ? undefined : 'menu-splash-in 0.65s ease both',
             }}
           >
-            {restaurant?.logo ? (
-              <>
-                <svg width="0" height="0" className="absolute" aria-hidden>
-                  <defs>
-                    <filter
-                      id="splash-logo-knockout"
-                      colorInterpolationFilters="sRGB"
-                    >
-                      {/* Keep color; push near-black pixels to transparent */}
-                      <feColorMatrix
-                        in="SourceGraphic"
-                        type="matrix"
-                        values="
-                          1 0 0 0 0
-                          0 1 0 0 0
-                          0 0 1 0 0
-                          4.2 4.2 4.2 0 -0.55"
-                        result="knockout"
-                      />
-                    </filter>
-                  </defs>
-                </svg>
-                <img
-                  src={restaurant.logo}
-                  alt=""
-                  draggable={false}
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
-                  style={{
-                    filter: 'url(#splash-logo-knockout)',
-                    transform: 'scale(1.04)',
-                    transformOrigin: 'center center',
-                  }}
-                />
-              </>
+            {logoSrc ? (
+              <img
+                src={logoSrc}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+              />
             ) : (
               <span
                 className="flex h-full w-full items-center justify-center font-serif text-5xl font-medium"
@@ -194,7 +190,7 @@ export function MenuEntrySplash({
             className="mt-8 max-w-[18rem] font-serif text-[1.85rem] font-medium leading-[1.18] tracking-tight sm:text-[2.05rem]"
             style={{
               color: INK,
-              animation: exiting ? undefined : 'menu-splash-in 0.7s ease 0.08s both',
+              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.06s both',
             }}
           >
             Welcome to {name}
@@ -204,7 +200,7 @@ export function MenuEntrySplash({
             className="mt-3 max-w-[16rem] text-[14px] leading-relaxed"
             style={{
               color: MUTED,
-              animation: exiting ? undefined : 'menu-splash-in 0.7s ease 0.14s both',
+              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.1s both',
             }}
           >
             {tagline}
@@ -213,7 +209,7 @@ export function MenuEntrySplash({
           <div
             className="mt-8 flex w-full max-w-[20rem] items-center gap-3"
             style={{
-              animation: exiting ? undefined : 'menu-splash-in 0.7s ease 0.2s both',
+              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.14s both',
             }}
           >
             <div className="h-px flex-1 bg-stone-300/80" />
@@ -227,16 +223,19 @@ export function MenuEntrySplash({
           </div>
         </div>
 
-        {/* Bottom CTA */}
         <div
           className="relative z-10 mx-auto w-full max-w-md space-y-3.5 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2"
           style={{
-            animation: exiting ? undefined : 'menu-splash-in 0.7s ease 0.26s both',
+            animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.18s both',
           }}
         >
           <button
             type="button"
-            onClick={finishEnter}
+            onClick={(event) => {
+              event.stopPropagation();
+              finishEnter();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99]"
             style={{
               background: ACCENT,
@@ -248,19 +247,13 @@ export function MenuEntrySplash({
             <ChevronUp className="h-4 w-4 text-white/95" strokeWidth={2.25} />
           </button>
 
-          <button
-            type="button"
-            onClick={() => setPaused((value) => !value)}
-            className="w-full space-y-2.5"
-            aria-label={paused ? 'Resume auto enter' : 'Pause auto enter'}
-          >
+          <div className="w-full space-y-2.5" aria-live="polite">
             <div className="h-[3px] overflow-hidden rounded-full bg-stone-200">
               <div
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.min(100, progress * 100)}%`,
                   background: ACCENT,
-                  transition: 'width 100ms linear',
                 }}
               />
             </div>
@@ -268,18 +261,18 @@ export function MenuEntrySplash({
               className="flex items-center justify-center gap-1.5 text-[12px]"
               style={{ color: MUTED }}
             >
-              {paused ? (
-                <Play className="h-3 w-3" style={{ color: ACCENT }} fill={ACCENT} />
+              {holding ? (
+                <>
+                  <Pause className="h-3 w-3" style={{ color: ACCENT }} fill={ACCENT} />
+                  <span>Paused · Release to continue</span>
+                </>
+              ) : timerDone && !canFinish ? (
+                <span>Opening menu…</span>
               ) : (
-                <Pause className="h-3 w-3" style={{ color: ACCENT }} fill={ACCENT} />
+                <span>Auto-entering in {secondsLeft}s · Hold to pause</span>
               )}
-              <span>
-                {paused
-                  ? 'Paused · Tap to resume'
-                  : `Auto-entering in ${secondsLeft}s · Tap to pause`}
-              </span>
             </p>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -287,7 +280,7 @@ export function MenuEntrySplash({
         @keyframes menu-splash-in {
           from {
             opacity: 0;
-            transform: translateY(12px);
+            transform: translateY(10px);
           }
           to {
             opacity: 1;

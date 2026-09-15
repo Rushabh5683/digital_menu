@@ -2,6 +2,11 @@ import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { validateAnonymousSessionId, validateCuid, validateSlug } from '../../utils/validate.js';
 import { resolveRestaurantTable } from '../admin/admin.qr.service.js';
+import {
+  assertBusinessDayEditable,
+  assertOrderDayEditable,
+  businessDateToLocalNoon,
+} from '../admin/admin.dayend.service.js';
 import { findRestaurantRecordBySlug } from '../restaurant/restaurant.service.js';
 import { computeExclusiveGst, money, taxFieldsFromCompute } from './orderTax.js';
 
@@ -41,18 +46,150 @@ function parseQuantity(value) {
   return qty;
 }
 
-async function nextOrderNumber(restaurantId) {
-  const count = await prisma.order.count({ where: { restaurantId } });
-  const seq = String(count + 1).padStart(4, '0');
-  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  return `ORD-${day}-${seq}`;
+function localDayKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+function startOfLocalDay(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function isCreatedToday(value) {
+  if (!value) return false;
+  return new Date(value).getTime() >= startOfLocalDay().getTime();
+}
+
+function shortOrderNo(orderNumber) {
+  const raw = String(orderNumber || '').trim();
+  if (!raw) return '—';
+  const parts = raw.split('-');
+  const seq = parts[parts.length - 1];
+  if (/^\d+$/.test(seq)) return seq.replace(/^0+(?=\d)/, '') || seq;
+  return raw;
+}
+
+/**
+ * Per restaurant, per local calendar day: ORD-YYYYMMDD-0001, 0002, …
+ * Display UI shows the trailing sequence (#1, #2), which resets each day.
+ */
+async function nextOrderNumber(restaurantId, dayKey = localDayKey()) {
+  const day = dayKey || localDayKey();
+  const prefix = `ORD-${day}-`;
+
+  const latest = await prisma.order.findFirst({
+    where: {
+      restaurantId,
+      orderNumber: { startsWith: prefix },
+    },
+    orderBy: { orderNumber: 'desc' },
+    select: { orderNumber: true },
+  });
+
+  let next = 1;
+  if (latest?.orderNumber) {
+    const parts = String(latest.orderNumber).split('-');
+    const seq = Number(parts[parts.length - 1]);
+    if (Number.isInteger(seq) && seq >= 1) next = seq + 1;
+  }
+
+  return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
 const orderInclude = {
   table: { select: { id: true, tableNumber: true, name: true } },
   items: { orderBy: { dishNameSnapshot: 'asc' } },
   restaurant: { select: { id: true, name: true, slug: true } },
+  appreciationShares: {
+    include: { captain: { select: { id: true, name: true } } },
+  },
 };
+
+const SINGLE_PAYMENT_METHODS = new Set([
+  'CASH',
+  'CARD',
+  'UPI_GPAY',
+  'UPI_PHONEPE',
+  'UPI_OTHER',
+  'OTHER',
+]);
+
+function money2(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function parsePaymentSplits(rawSplits, orderTotal) {
+  if (!Array.isArray(rawSplits) || rawSplits.length < 2) {
+    throw new AppError('Part payment needs at least two payment lines', 400);
+  }
+  if (rawSplits.length > 6) {
+    throw new AppError('Part payment supports at most 6 lines', 400);
+  }
+
+  const splits = rawSplits.map((row, index) => {
+    const method = String(row?.method || '').trim().toUpperCase();
+    if (!SINGLE_PAYMENT_METHODS.has(method)) {
+      throw new AppError(`Invalid payment method on part-payment line ${index + 1}`, 400);
+    }
+    const amount = money2(row?.amount);
+    if (!(amount > 0)) {
+      throw new AppError(`Part-payment line ${index + 1} amount must be greater than 0`, 400);
+    }
+    const note =
+      typeof row?.note === 'string' && row.note.trim()
+        ? row.note.trim().slice(0, 120)
+        : null;
+    if ((method === 'OTHER' || method === 'UPI_OTHER') && note) {
+      return { method, amount, note };
+    }
+    return { method, amount };
+  });
+
+  const sum = money2(splits.reduce((acc, row) => acc + row.amount, 0));
+  if (Math.abs(sum - money2(orderTotal)) > 0.05) {
+    throw new AppError(
+      `Part payment lines must add up to the bill total (${money2(orderTotal)})`,
+      400,
+    );
+  }
+
+  return splits;
+}
+
+function parseAppreciationCaptains(rawIds) {
+  if (!Array.isArray(rawIds)) return [];
+  const ids = [];
+  const seen = new Set();
+  for (const raw of rawIds) {
+    const id = validateCuid(String(raw || ''), 'captainUserId');
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function splitAppreciationAmount(totalAmount, captainIds) {
+  const total = money2(totalAmount);
+  const n = captainIds.length;
+  if (n < 1 || !(total > 0)) return [];
+
+  const base = money2(Math.floor((total * 100) / n) / 100);
+  const shares = captainIds.map((captainUserId) => ({
+    captainUserId,
+    amount: base,
+  }));
+  const allocated = money2(base * n);
+  const remainder = money2(total - allocated);
+  if (remainder !== 0) {
+    shares[0].amount = money2(shares[0].amount + remainder);
+  }
+  return shares;
+}
 
 export function serializeOrder(order) {
   return {
@@ -86,6 +223,14 @@ export function serializeOrder(order) {
     billPrintedAt: order.billPrintedAt ?? null,
     paymentMethod: order.paymentMethod ?? null,
     paymentNote: order.paymentNote ?? null,
+    paymentSplits: Array.isArray(order.paymentSplits) ? order.paymentSplits : null,
+    staffAppreciationAmount: Number(order.staffAppreciationAmount ?? 0),
+    appreciationShares: (order.appreciationShares || []).map((share) => ({
+      id: share.id,
+      captainUserId: share.captainUserId,
+      amount: Number(share.amount),
+      captainName: share.captain?.name ?? null,
+    })),
     paidAt: order.paidAt ?? null,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -207,6 +352,38 @@ async function findOpenOrderForTable(restaurantId, tableId) {
   });
 }
 
+/**
+ * Same-calendar-day open tickets can continue.
+ * Empty tickets left from a previous day are discarded so today's first bill can be #1.
+ * Prior-day tickets with items must be settled/cancelled first (never silently continued).
+ */
+async function resolveContinuableOpenOrder(restaurantId, tableId) {
+  const existing = await findOpenOrderForTable(restaurantId, tableId);
+  if (!existing) return null;
+
+  if (isCreatedToday(existing.createdAt)) {
+    return existing;
+  }
+
+  const itemCount =
+    existing.items?.length ??
+    (await prisma.orderItem.count({ where: { orderId: existing.id } }));
+
+  if (itemCount < 1) {
+    await prisma.order.delete({ where: { id: existing.id } });
+    return null;
+  }
+
+  throw new AppError(
+    `Table still has unpaid order #${shortOrderNo(existing.orderNumber)} from a previous day. Settle or cancel it on Live Orders before starting today's orders.`,
+    409,
+    {
+      code: 'PRIOR_DAY_OPEN_ORDER',
+      openOrder: serializeOrder(existing),
+    },
+  );
+}
+
 async function resolveCustomerSessionOptional(restaurant, anonymousSessionIdRaw) {
   if (!anonymousSessionIdRaw) return null;
   const anonymousSessionId = validateAnonymousSessionId(anonymousSessionIdRaw);
@@ -279,7 +456,7 @@ export async function createOrder(body = {}) {
   const { lines, subtotal, total, cgstRate, sgstRate, cgstAmount, sgstAmount, taxAmount } =
     priced;
 
-  const openOrder = await findOpenOrderForTable(restaurant.id, table.id);
+  const openOrder = await resolveContinuableOpenOrder(restaurant.id, table.id);
   if (openOrder) {
     throw new AppError(
       'This table already has an open order. Add items to it instead of placing a new one.',
@@ -384,6 +561,22 @@ export async function addItemsToOrder(orderId, body = {}) {
 
   if (existing.tableId !== table.id) {
     throw new AppError('Order does not belong to this table', 403);
+  }
+
+  // Guests must not keep feeding yesterday's unpaid ticket (Live Orders is day-scoped).
+  if (!isCreatedToday(existing.createdAt)) {
+    const full = await prisma.order.findFirst({
+      where: { id: existing.id },
+      include: orderInclude,
+    });
+    throw new AppError(
+      `Table still has unpaid order #${shortOrderNo(existing.orderNumber)} from a previous day. Ask staff to settle or cancel it before ordering.`,
+      409,
+      {
+        code: 'PRIOR_DAY_OPEN_ORDER',
+        openOrder: serializeOrder(full || existing),
+      },
+    );
   }
 
   const { lines } = await buildPricedLines(restaurant.id, body.items);
@@ -494,7 +687,16 @@ export async function getOpenOrderForTable({
     });
   }
 
-  let order = await findOpenOrderForTable(restaurant.id, table.id);
+  // Same-day only: discard empty prior-day tickets; never restore prior-day bills with items.
+  let order;
+  try {
+    order = await resolveContinuableOpenOrder(restaurant.id, table.id);
+  } catch (error) {
+    if (error instanceof AppError && error.details?.code === 'PRIOR_DAY_OPEN_ORDER') {
+      throw error;
+    }
+    throw error;
+  }
   if (!order) {
     return { order: null };
   }
@@ -601,13 +803,20 @@ export async function getCustomerMyOrder({
   );
 
   if (tableNumber != null || tableId) {
-    const open = await getOpenOrderForTable({
-      restaurantSlug,
-      tableNumber,
-      tableId,
-      anonymousSessionId,
-    });
-    if (open.order) return open;
+    try {
+      const open = await getOpenOrderForTable({
+        restaurantSlug,
+        tableNumber,
+        tableId,
+        anonymousSessionId,
+      });
+      if (open.order) return open;
+    } catch (error) {
+      // Prior-day unpaid tickets stay with staff — do not resume for guests.
+      if (!(error instanceof AppError && error.details?.code === 'PRIOR_DAY_OPEN_ORDER')) {
+        throw error;
+      }
+    }
   }
 
   const active = await prisma.order.findFirst({
@@ -620,7 +829,7 @@ export async function getCustomerMyOrder({
     orderBy: { createdAt: 'desc' },
   });
 
-  if (active) {
+  if (active && isCreatedToday(active.createdAt)) {
     return { order: serializeOrder(active) };
   }
 
@@ -668,7 +877,15 @@ export async function listOrdersForRestaurant(restaurantId, query = {}) {
 export async function updateOrderStatus(
   orderId,
   nextStatusRaw,
-  { restaurantId = null, paymentMethod = null, paymentNote = null } = {},
+  {
+    restaurantId = null,
+    paymentMethod = null,
+    paymentNote = null,
+    paymentSplits = null,
+    staffAppreciationAmount = null,
+    appreciationCaptainIds = null,
+    businessDate = null,
+  } = {},
 ) {
   const id = validateCuid(orderId, 'orderId');
   const nextStatus = String(nextStatusRaw || '').trim().toUpperCase();
@@ -699,44 +916,116 @@ export async function updateOrderStatus(
   }
 
   const data = { status: nextStatus };
+  let appreciationRows = [];
+  let backdateStamp = null;
 
   if (nextStatus === OrderStatuses.COMPLETED) {
     const itemCount = await prisma.orderItem.count({ where: { orderId: id } });
     if (itemCount < 1) {
       throw new AppError('Add at least one item before completing the order', 400);
     }
-    const method = String(paymentMethod || '').trim().toUpperCase();
-    const allowedMethods = new Set([
-      'CASH',
-      'CARD',
-      'UPI_GPAY',
-      'UPI_PHONEPE',
-      'UPI_OTHER',
-      'OTHER',
-    ]);
-    if (!allowedMethods.has(method)) {
-      throw new AppError(
-        'Payment method is required when completing an order (CASH, CARD, UPI_GPAY, UPI_PHONEPE, UPI_OTHER, OTHER)',
-        400,
-      );
-    }
-    data.paymentMethod = method;
-    data.paidAt = new Date();
-    if (method === 'OTHER' || method === 'UPI_OTHER') {
-      const note =
-        typeof paymentNote === 'string' && paymentNote.trim()
-          ? paymentNote.trim().slice(0, 120)
-          : null;
-      data.paymentNote = note;
+
+    if (businessDate) {
+      const ymd = await assertBusinessDayEditable(existing.restaurantId, businessDate);
+      backdateStamp = businessDateToLocalNoon(ymd);
+      const dayKey = ymd.replace(/-/g, '');
+      // Retarget order number + timestamps onto the unlocked business date.
+      data.orderNumber = await nextOrderNumber(existing.restaurantId, dayKey);
+      data.createdAt = backdateStamp;
     } else {
-      data.paymentNote = null;
+      await assertOrderDayEditable(existing.restaurantId, existing);
     }
+
+    const method = String(paymentMethod || '').trim().toUpperCase();
+    const paidAt = backdateStamp || new Date();
+
+    if (method === 'PART') {
+      const splits = parsePaymentSplits(paymentSplits, existing.total);
+      data.paymentMethod = 'PART';
+      data.paymentSplits = splits;
+      data.paymentNote = null;
+      data.paidAt = paidAt;
+    } else {
+      if (!SINGLE_PAYMENT_METHODS.has(method)) {
+        throw new AppError(
+          'Payment method is required when completing an order (CASH, CARD, UPI_GPAY, UPI_PHONEPE, UPI_OTHER, OTHER, PART)',
+          400,
+        );
+      }
+      data.paymentMethod = method;
+      data.paymentSplits = null;
+      data.paidAt = paidAt;
+      if (method === 'OTHER' || method === 'UPI_OTHER') {
+        const note =
+          typeof paymentNote === 'string' && paymentNote.trim()
+            ? paymentNote.trim().slice(0, 120)
+            : null;
+        data.paymentNote = note;
+      } else {
+        data.paymentNote = null;
+      }
+    }
+
+    const appreciationTotal = money2(staffAppreciationAmount);
+    if (appreciationTotal < 0) {
+      throw new AppError('Staff appreciation cannot be negative', 400);
+    }
+    if (appreciationTotal > 100000) {
+      throw new AppError('Staff appreciation amount is too large', 400);
+    }
+
+    const captainIds = parseAppreciationCaptains(appreciationCaptainIds || []);
+    if (appreciationTotal > 0 && captainIds.length < 1) {
+      throw new AppError('Select at least one captain for staff appreciation', 400);
+    }
+    if (appreciationTotal === 0 && captainIds.length > 0) {
+      throw new AppError('Enter a staff appreciation amount for the selected captains', 400);
+    }
+
+    if (appreciationTotal > 0) {
+      const captains = await prisma.user.findMany({
+        where: {
+          id: { in: captainIds },
+          restaurantId: existing.restaurantId,
+          role: 'RESTAURANT_CAPTAIN',
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (captains.length !== captainIds.length) {
+        throw new AppError('One or more selected captains are invalid', 400);
+      }
+      appreciationRows = splitAppreciationAmount(appreciationTotal, captainIds);
+    }
+
+    data.staffAppreciationAmount = appreciationTotal;
   }
 
-  const order = await prisma.order.update({
-    where: { id },
-    data,
-    include: orderInclude,
+  const order = await prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id },
+      data,
+      include: orderInclude,
+    });
+
+    if (nextStatus === OrderStatuses.COMPLETED) {
+      await tx.orderAppreciationShare.deleteMany({ where: { orderId: id } });
+      if (appreciationRows.length > 0) {
+        await tx.orderAppreciationShare.createMany({
+          data: appreciationRows.map((row) => ({
+            orderId: id,
+            captainUserId: row.captainUserId,
+            amount: row.amount,
+          })),
+        });
+      }
+      return tx.order.findUnique({
+        where: { id },
+        include: orderInclude,
+      });
+    }
+
+    return updated;
   });
 
   return { order: serializeOrder(order) };
@@ -745,10 +1034,11 @@ export async function updateOrderStatus(
 /**
  * Restaurant admin: open a walk-in ticket on a free table (no guest QR required).
  * If the table already has an open order, returns that ticket instead.
+ * Optional businessDate (unlocked past day) stamps createdAt + order # onto that date.
  */
 export async function adminStartOrderForTable(
   restaurantId,
-  { tableId = null, tableNumber = null } = {},
+  { tableId = null, tableNumber = null, businessDate = null } = {},
 ) {
   const rid = validateCuid(restaurantId, 'restaurantId');
   const table = await resolveRestaurantTable(rid, { tableId, tableNumber });
@@ -759,12 +1049,20 @@ export async function adminStartOrderForTable(
     throw new AppError('This table is inactive', 400);
   }
 
-  const existing = await findOpenOrderForTable(rid, table.id);
+  const existing = await resolveContinuableOpenOrder(rid, table.id);
   if (existing) {
     return { order: serializeOrder(existing), created: false };
   }
 
-  const orderNumber = await nextOrderNumber(rid);
+  let stamp = null;
+  let dayKey = localDayKey();
+  if (businessDate) {
+    const ymd = await assertBusinessDayEditable(rid, businessDate);
+    stamp = businessDateToLocalNoon(ymd);
+    dayKey = ymd.replace(/-/g, '');
+  }
+
+  const orderNumber = await nextOrderNumber(rid, dayKey);
   const order = await prisma.order.create({
     data: {
       restaurantId: rid,
@@ -781,11 +1079,73 @@ export async function adminStartOrderForTable(
       roundOffAmount: 0,
       total: 0,
       customerNote: null,
+      ...(stamp ? { createdAt: stamp, updatedAt: stamp } : {}),
     },
     include: orderInclude,
   });
 
   return { order: serializeOrder(order), created: true };
+}
+
+/**
+ * Correct payment method on a settled bill (e.g. Cash → GPay).
+ * Blocked while that business day is Day-End locked.
+ */
+export async function updateOrderPayment(
+  orderId,
+  {
+    restaurantId = null,
+    paymentMethod = null,
+    paymentNote = null,
+    paymentSplits = null,
+  } = {},
+) {
+  const id = validateCuid(orderId, 'orderId');
+  const existing = await prisma.order.findUnique({ where: { id } });
+  if (!existing) throw new AppError('Order not found', 404);
+  if (restaurantId && existing.restaurantId !== restaurantId) {
+    throw new AppError('Order not found', 404);
+  }
+  if (existing.status !== OrderStatuses.COMPLETED) {
+    throw new AppError('Only completed bills can have payment method edited', 400);
+  }
+
+  await assertOrderDayEditable(existing.restaurantId, existing);
+
+  const method = String(paymentMethod || '').trim().toUpperCase();
+  const data = {};
+
+  if (method === 'PART') {
+    const splits = parsePaymentSplits(paymentSplits, existing.total);
+    data.paymentMethod = 'PART';
+    data.paymentSplits = splits;
+    data.paymentNote = null;
+  } else {
+    if (!SINGLE_PAYMENT_METHODS.has(method)) {
+      throw new AppError(
+        'Payment method must be CASH, CARD, UPI_GPAY, UPI_PHONEPE, UPI_OTHER, OTHER, or PART',
+        400,
+      );
+    }
+    data.paymentMethod = method;
+    data.paymentSplits = null;
+    if (method === 'OTHER' || method === 'UPI_OTHER') {
+      data.paymentNote =
+        typeof paymentNote === 'string' && paymentNote.trim()
+          ? paymentNote.trim().slice(0, 120)
+          : null;
+    } else {
+      data.paymentNote = null;
+    }
+  }
+
+  const order = await prisma.order.update({
+    where: { id },
+    data,
+    include: orderInclude,
+  });
+
+  return { order: serializeOrder(order) };
 }
 
 async function loadEditableAdminOrder(restaurantId, orderId) {

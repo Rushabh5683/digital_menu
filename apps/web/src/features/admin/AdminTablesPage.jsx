@@ -14,6 +14,7 @@ import { Field } from '../../shared/ui/Field.jsx';
 import { Input } from '../../shared/ui/FormControls.jsx';
 import { FormSection } from '../../shared/ui/FormSection.jsx';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
+import { withStaffMenuPreview } from '../menu/lib/staffPreview.js';
 
 function downloadDataUrl(dataUrl, filename) {
   const link = document.createElement('a');
@@ -109,10 +110,13 @@ export function AdminTablesPage() {
   });
 
   const qrMutation = useMutation({
-    mutationFn: (id) => api.getAdminTableQr(id),
-    onSuccess: (payload) => {
+    mutationFn: (id) => api.generateAdminTableQr(id),
+    onSuccess: async (payload) => {
       setActionError(null);
       setQrPreview(payload);
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'tables'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'qr-codes'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'setup'] });
     },
     onError: (error) => setActionError(error.message),
   });
@@ -129,9 +133,9 @@ export function AdminTablesPage() {
   }
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">
             Tables
           </p>
@@ -156,7 +160,7 @@ export function AdminTablesPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Tables" value={stats.total} />
         <StatCard label="Active" value={stats.active} />
         <StatCard label="Seat capacity" value={stats.seats || '—'} />
@@ -229,7 +233,7 @@ export function AdminTablesPage() {
         ) : null}
 
         {filtered.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((table, index) => (
               <article
                 key={table.id}
@@ -315,7 +319,7 @@ export function AdminTablesPage() {
                   <Button
                     size="sm"
                     variant="accent"
-                    disabled={qrMutation.isPending}
+                    disabled={qrMutation.isPending || !table.isActive}
                     onClick={() => qrMutation.mutate(table.id)}
                   >
                     <QrCode size={14} />
@@ -324,12 +328,14 @@ export function AdminTablesPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={qrMutation.isPending}
+                    disabled={qrMutation.isPending || !table.isActive}
                     onClick={async () => {
                       try {
-                        const payload = await api.getAdminTableQr(table.id);
+                        const payload = await api.generateAdminTableQr(table.id);
                         downloadDataUrl(payload.dataUrl, payload.filename);
                         setActionError(null);
+                        await queryClient.invalidateQueries({ queryKey: ['admin', 'tables'] });
+                        await queryClient.invalidateQueries({ queryKey: ['admin', 'qr-codes'] });
                       } catch (error) {
                         setActionError(error.message);
                       }
@@ -414,7 +420,13 @@ export function AdminTablesPage() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => window.open(qrPreview.menuUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open(
+                    withStaffMenuPreview(qrPreview.menuUrl),
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
               >
                 Open menu link
               </Button>
@@ -488,7 +500,7 @@ function TableForm({ initial, error, loading, onSubmit, onCancel }) {
     <form className="space-y-5" onSubmit={handleSubmit}>
       {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
       <FormSection title="Table details">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Table number" htmlFor="table-number" required>
             <Input
               id="table-number"
@@ -579,7 +591,7 @@ function BulkCreateForm({ error, loading, onSubmit, onCancel }) {
     <form className="space-y-5" onSubmit={handleSubmit}>
       {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
       <FormSection title="Number range">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="From" htmlFor="bulk-from" required>
             <Input
               id="bulk-from"

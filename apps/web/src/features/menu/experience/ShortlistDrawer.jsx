@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatPrice, dishImage, parsePrice } from './lib/formatters.js';
 
@@ -20,13 +20,59 @@ export function ShortlistDrawer({
   currency = 'INR',
 }) {
   const [showServerMode, setShowServerMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current) {
+      setSelectedIds(new Set(shortlist.map((item) => item.dish.id)));
+      setShowServerMode(false);
+    }
+    if (!isOpen) {
+      setSelectedIds(new Set());
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen, shortlist]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedIds((prev) => {
+      const valid = new Set(shortlist.map((item) => item.dish.id));
+      return new Set([...prev].filter((id) => valid.has(id)));
+    });
+  }, [shortlist, isOpen]);
 
   if (!isOpen) return null;
+
+  const selectedItems = shortlist.filter((item) => selectedIds.has(item.dish.id));
+  const allSelected = shortlist.length > 0 && selectedIds.size === shortlist.length;
+  const selectedCount = selectedItems.length;
 
   const subtotal = shortlist.reduce(
     (sum, item) => sum + parsePrice(item.dish.price) * item.quantity,
     0,
   );
+  const selectedSubtotal = selectedItems.reduce(
+    (sum, item) => sum + parsePrice(item.dish.price) * item.quantity,
+    0,
+  );
+
+  function toggleSelected(dishId) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(dishId)) next.delete(dishId);
+      else next.add(dishId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(shortlist.map((item) => item.dish.id)));
+    }
+  }
 
   const hasBread = shortlist.some((item) =>
     /bread|naan|roti|side/.test(
@@ -44,7 +90,7 @@ export function ShortlistDrawer({
     >
       <button
         type="button"
-        className="absolute inset-0 cursor-default bg-stone-950/65 backdrop-blur-sm"
+        className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
         aria-label="Close shortlist"
         onClick={onClose}
       />
@@ -140,12 +186,47 @@ export function ShortlistDrawer({
               </div>
             ) : (
               <>
+                <div className="flex items-center justify-between px-0.5">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-stone-500">
+                    Choose picks to order
+                  </p>
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="cursor-pointer text-[11px] font-semibold text-[#9A7B4F] underline-offset-2 hover:underline"
+                  >
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                </div>
+
                 <div className="space-y-3">
-                  {shortlist.map(({ dish, quantity }) => (
+                  {shortlist.map(({ dish, quantity }) => {
+                    const isSelected = selectedIds.has(dish.id);
+                    return (
                     <div
                       key={dish.id}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/90 bg-white p-3.5 shadow-2xs"
+                      className={[
+                        'flex min-w-0 items-center gap-2.5 rounded-2xl border p-3 shadow-2xs transition-colors sm:gap-3 sm:p-3.5',
+                        isSelected
+                          ? 'border-[#9A7B4F]/45 bg-[#FAF6F0]'
+                          : 'border-stone-200/90 bg-white opacity-80',
+                      ].join(' ')}
                     >
+                      <button
+                        type="button"
+                        onClick={() => toggleSelected(dish.id)}
+                        className={[
+                          'flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors',
+                          isSelected
+                            ? 'border-[#9A7B4F] bg-[#9A7B4F] text-white'
+                            : 'border-stone-300 bg-white text-transparent',
+                        ].join(' ')}
+                        aria-label={isSelected ? `Deselect ${dish.name}` : `Select ${dish.name}`}
+                        aria-pressed={isSelected}
+                      >
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </button>
+
                       {dishImage(dish) ? (
                         <img
                           src={dishImage(dish)}
@@ -171,7 +252,7 @@ export function ShortlistDrawer({
                         </span>
                       </div>
 
-                      <div className="flex items-center space-x-1.5 rounded-full border border-stone-200/70 bg-stone-100/90 p-0.5">
+                      <div className="flex shrink-0 items-center space-x-1.5 rounded-full border border-stone-200/70 bg-stone-100/90 p-0.5">
                         <button
                           type="button"
                           onClick={() => onUpdateQuantity?.(dish.id, -1)}
@@ -196,29 +277,30 @@ export function ShortlistDrawer({
                       <button
                         type="button"
                         onClick={() => onRemoveItem?.(dish.id)}
-                        className="cursor-pointer p-1 text-stone-400 transition-colors hover:text-red-600"
+                        className="shrink-0 cursor-pointer p-1.5 text-stone-400 transition-colors hover:text-red-600"
                         title="Remove"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {!hasBread && suggestedBread ? (
-                  <div className="flex items-center justify-between rounded-2xl border border-[#E8DFD3] bg-[#FAF6F0] p-3.5 text-xs">
-                    <div className="space-y-0.5">
+                  <div className="flex min-w-0 items-start justify-between gap-3 rounded-2xl border border-[#E8DFD3] bg-[#FAF6F0] p-3.5 text-xs">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#9A7B4F]">
                         Complete your curries
                       </span>
-                      <span className="font-serif font-medium text-stone-900">
+                      <span className="block break-words font-serif font-medium text-stone-900">
                         Pair with {suggestedBread.name} (+{formatPrice(suggestedBread.price, currency)})
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => onSelectDish?.(suggestedBread)}
-                      className="cursor-pointer rounded-xl border border-[#9A7B4F]/40 bg-white px-3 py-1.5 text-[11px] font-medium text-stone-800 transition-colors hover:bg-[#9A7B4F] hover:text-white"
+                      className="shrink-0 cursor-pointer rounded-xl border border-[#9A7B4F]/40 bg-white px-3 py-1.5 text-[11px] font-medium text-stone-800 transition-colors hover:bg-[#9A7B4F] hover:text-white"
                     >
                       View
                     </button>
@@ -232,9 +314,16 @@ export function ShortlistDrawer({
         {shortlist.length > 0 && !showServerMode ? (
           <div className="shrink-0 space-y-3 border-t border-stone-200/90 bg-white p-5">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-normal text-stone-500">Table Subtotal:</span>
+              <span className="font-normal text-stone-500">
+                {selectedCount === shortlist.length
+                  ? 'Table subtotal'
+                  : `Selected (${selectedCount})`}
+              </span>
               <span className="font-serif text-lg font-semibold text-stone-900">
-                {formatPrice(subtotal, currency)}
+                {formatPrice(
+                  selectedCount === shortlist.length ? subtotal : selectedSubtotal,
+                  currency,
+                )}
               </span>
             </div>
 
@@ -242,11 +331,18 @@ export function ShortlistDrawer({
               <button
                 id="shortlist-add-to-order-btn"
                 type="button"
-                onClick={() => onAddToOrder(shortlist)}
-                className="flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl bg-[#9A7B4F] py-3 text-xs font-medium uppercase tracking-wider text-white shadow-xs transition-all hover:bg-[#866940] active:scale-[0.99] sm:text-sm"
+                disabled={selectedCount === 0}
+                onClick={() => onAddToOrder(selectedItems)}
+                className="flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl bg-[#9A7B4F] py-3 text-xs font-medium uppercase tracking-wider text-white shadow-xs transition-all hover:bg-[#866940] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 sm:text-sm"
               >
                 <ShoppingBag className="h-4 w-4" />
-                <span>Add picks to order</span>
+                <span>
+                  {selectedCount === 0
+                    ? 'Select picks to add'
+                    : selectedCount === 1
+                      ? 'Add 1 pick to order'
+                      : `Add ${selectedCount} picks to order`}
+                </span>
               </button>
             ) : null}
 

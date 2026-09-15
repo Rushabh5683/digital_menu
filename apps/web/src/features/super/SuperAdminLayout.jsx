@@ -15,7 +15,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 const nav = [
   { to: '/superadmin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/superadmin/restaurants', label: 'Restaurants', icon: Building2 },
-  { to: '/superadmin/orders', label: 'Orders Overview', icon: ClipboardList },
+  // { to: '/superadmin/orders', label: 'Orders Overview', icon: ClipboardList },
   { to: '/superadmin/analytics', label: 'Platform Analytics', icon: BarChart3 },
   { to: '/superadmin/settings', label: 'Settings', icon: Settings },
 ];
@@ -39,11 +39,11 @@ export function SuperAdminLayout() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-[var(--surface)] lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[var(--surface)] lg:grid lg:grid-cols-[var(--super-sidebar-width)_1fr]">
       {mobileOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-[var(--ink)]/40 lg:hidden"
+          className="fixed inset-0 z-40 bg-[var(--ink)]/20 backdrop-blur-[2px] lg:hidden"
           aria-label="Close navigation"
           onClick={() => setMobileOpen(false)}
         />
@@ -51,7 +51,7 @@ export function SuperAdminLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[260px] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:h-full lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[var(--super-sidebar-width)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:h-full lg:max-w-none lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
         style={{
@@ -115,14 +115,15 @@ export function SuperAdminLayout() {
         </div>
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="z-30 shrink-0 border-b border-[var(--line)] bg-[var(--surface-elevated)]/90 backdrop-blur-md">
           <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-[var(--line)] bg-white p-2 text-[var(--ink)] lg:hidden"
+                className="rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] lg:hidden"
                 onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
               >
                 <Menu size={16} />
               </button>
@@ -140,7 +141,7 @@ export function SuperAdminLayout() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8 lg:py-8 [-webkit-overflow-scrolling:touch]">
           <Outlet />
         </main>
       </div>

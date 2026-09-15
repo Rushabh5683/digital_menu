@@ -21,7 +21,7 @@ export function MenuFiltersSheet({ open, selected, onChange, onClose, availableT
     <div className="fixed inset-0 z-[55] flex items-end justify-center px-4 pb-4 sm:items-center sm:p-6">
       <button
         type="button"
-        className="drawer-backdrop absolute inset-0 bg-black/75 backdrop-blur-sm"
+        className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
         aria-label="Close filters"
         onClick={onClose}
       />

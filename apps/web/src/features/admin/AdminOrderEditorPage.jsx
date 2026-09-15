@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
+import { goBack } from '../../shared/lib/navigation.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
@@ -23,6 +24,8 @@ import {
   formatMoney,
   formatOrderDisplayNumber,
 } from './orderBillPrint.js';
+
+const BACK_FALLBACK = '/admin/orders';
 
 const EDITABLE = new Set(['PLACED', 'ACCEPTED', 'PREPARING', 'READY']);
 
@@ -105,6 +108,7 @@ export function AdminOrderEditorPage() {
     queryClient.invalidateQueries({ queryKey: ['admin', 'order', orderId] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] });
   };
 
   const qtyMutation = useMutation({
@@ -162,8 +166,18 @@ export function AdminOrderEditorPage() {
   };
 
   const completeMutation = useMutation({
-    mutationFn: ({ paymentMethod, paymentNote }) =>
-      api.updateAdminOrderStatus(orderId, 'COMPLETED', { paymentMethod, paymentNote }),
+    mutationFn: (payment) => {
+      let businessDate;
+      try {
+        businessDate = sessionStorage.getItem('dm_day_end_edit_date') || undefined;
+      } catch {
+        businessDate = undefined;
+      }
+      return api.updateAdminOrderStatus(orderId, 'COMPLETED', {
+        ...payment,
+        businessDate,
+      });
+    },
     onMutate: () => setError(null),
     onError: (err) => setError(err.message || 'Could not complete order'),
     onSuccess: () => {
@@ -181,10 +195,10 @@ export function AdminOrderEditorPage() {
         await api.discardAdminEmptyOrder(current.id);
         invalidate();
       } catch {
-        // still navigate home
+        // still navigate back
       }
     }
-    navigate('/admin/orders');
+    goBack(navigate, BACK_FALLBACK);
   };
 
   const handleSave = async () => {
@@ -223,7 +237,7 @@ export function AdminOrderEditorPage() {
     return (
       <div className="space-y-4">
         <Alert tone="error">{orderQuery.error?.message || 'Order not found'}</Alert>
-        <Button onClick={() => navigate('/admin/orders')}>Back to tables</Button>
+        <Button onClick={() => goBack(navigate, BACK_FALLBACK)}>Back to tables</Button>
       </div>
     );
   }
@@ -240,20 +254,17 @@ export function AdminOrderEditorPage() {
   const billed = Boolean(order.billPrintedAt);
 
   return (
-    <div className="ops-board -mx-1 flex min-h-[calc(100vh-7rem)] flex-col gap-3 sm:-mx-0">
+    <div className="ops-board -mx-1 flex min-h-[calc(100vh-7rem)] flex-col gap-3 pb-[max(5.5rem,calc(4.5rem+env(safe-area-inset-bottom)))] sm:-mx-0 lg:pb-0">
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white/95 px-4 py-3 shadow-[0_12px_28px_-24px_rgba(15,31,28,0.4)]">
         <div className="flex min-w-0 items-center gap-3">
-          <Link
-            to="/admin/orders"
-            onClick={(event) => {
-              event.preventDefault();
-              leaveToFloor();
-            }}
+          <button
+            type="button"
+            onClick={() => leaveToFloor()}
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] text-[var(--ink)] hover:bg-[var(--surface)]"
-            aria-label="Back to tables"
+            aria-label="Back"
           >
             <ArrowLeft size={18} />
-          </Link>
+          </button>
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               {table}
@@ -265,13 +276,16 @@ export function AdminOrderEditorPage() {
             >
               Order #{displayNo}
             </h1>
+            <p className="mt-0.5 truncate font-mono text-xs font-semibold text-[var(--ink-soft)]">
+              Order ID: {order.orderNumber || order.id}
+            </p>
             <p className="text-xs text-[var(--muted)]">
               {formatClock(order.createdAt)} · {order.status.replaceAll('_', ' ')}
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden flex-wrap items-center gap-2 lg:flex">
           <Button
             variant="secondary"
             disabled={!canEdit || saveFlash}
@@ -329,34 +343,36 @@ export function AdminOrderEditorPage() {
         <Alert tone="info">This ticket is closed — view only.</Alert>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
         {/* Left: categories + dishes */}
-        <section className="flex min-h-[22rem] overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
-          <aside className="w-[8.5rem] shrink-0 border-r border-[var(--line)] bg-[var(--surface)]/80 sm:w-44">
-            <p className="px-3 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+        <section className="flex min-h-[22rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)] lg:flex-row">
+          <aside className="shrink-0 border-b border-[var(--line)] bg-[var(--surface)]/80 lg:w-44 lg:border-b-0 lg:border-r">
+            <p className="hidden px-3 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted)] lg:block">
               Menu
             </p>
-            <ul className="max-h-[min(70vh,36rem)] space-y-0.5 overflow-y-auto px-1.5 pb-3">
+            <ul className="flex gap-1.5 overflow-x-auto overscroll-x-contain px-2.5 py-2.5 lg:max-h-[min(70vh,36rem)] lg:flex-col lg:space-y-0.5 lg:overflow-y-auto lg:px-1.5 lg:pb-3">
               {dishesQuery.isLoading ? (
-                <li className="px-2 py-3 text-xs text-[var(--muted)]">Loading…</li>
+                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">Loading…</li>
               ) : categories.length === 0 ? (
-                <li className="px-2 py-3 text-xs text-[var(--muted)]">No categories</li>
+                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">No categories</li>
               ) : (
                 categories.map((cat) => {
                   const active = cat.id === activeCategoryId;
                   return (
-                    <li key={cat.id}>
+                    <li key={cat.id} className="shrink-0 lg:w-full">
                       <button
                         type="button"
                         onClick={() => setSelectedCategoryId(cat.id)}
                         className={[
-                          'flex w-full flex-col rounded-xl px-2.5 py-2.5 text-left transition',
+                          'flex flex-col rounded-xl px-3 py-2 text-left transition lg:w-full lg:px-2.5 lg:py-2.5',
                           active
                             ? 'bg-[var(--ink)] text-white'
-                            : 'text-[var(--ink)] hover:bg-white',
+                            : 'border border-[var(--line)] bg-white text-[var(--ink)] hover:bg-white lg:border-transparent',
                         ].join(' ')}
                       >
-                        <span className="truncate text-sm font-semibold">{cat.name}</span>
+                        <span className="max-w-[9rem] truncate text-sm font-semibold lg:max-w-none">
+                          {cat.name}
+                        </span>
                         <span
                           className={[
                             'text-[10px]',
@@ -424,7 +440,7 @@ export function AdminOrderEditorPage() {
         </section>
 
         {/* Right: current order */}
-        <section className="flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
+        <section className="flex min-h-[22rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
           <div className="border-b border-[var(--line)] px-4 py-3">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
               Current order
@@ -443,7 +459,7 @@ export function AdminOrderEditorPage() {
               items.map((item) => (
                 <li
                   key={item.id}
-                  className="flex items-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--surface)]/70 px-2.5 py-2"
+                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--surface)]/70 px-2.5 py-2"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-[var(--ink)]">
@@ -454,7 +470,7 @@ export function AdminOrderEditorPage() {
                     </p>
                   </div>
                   {canEdit ? (
-                    <div className="inline-flex items-center gap-0.5 rounded-full border border-[var(--line)] bg-white p-0.5">
+                    <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-[var(--line)] bg-white p-0.5">
                       <button
                         type="button"
                         disabled={lineBusy || item.quantity <= 1}
@@ -486,7 +502,7 @@ export function AdminOrderEditorPage() {
                       </button>
                     </div>
                   ) : (
-                    <span className="text-sm font-semibold">× {item.quantity}</span>
+                    <span className="shrink-0 text-sm font-semibold">× {item.quantity}</span>
                   )}
                   <span className="w-14 shrink-0 text-right text-sm font-bold text-[var(--teal)]">
                     {formatMoney(item.subtotal)}
@@ -495,7 +511,7 @@ export function AdminOrderEditorPage() {
                     <button
                       type="button"
                       disabled={lineBusy}
-                      className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-40"
+                      className="shrink-0 rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-40"
                       onClick={() => removeMutation.mutate(item.id)}
                       aria-label="Remove item"
                     >
@@ -552,10 +568,53 @@ export function AdminOrderEditorPage() {
         </section>
       </div>
 
+      {/* Mobile sticky actions */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 lg:hidden">
+        <div className="pointer-events-auto border-t border-[var(--line)] bg-[var(--surface-elevated)]/95 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-28px_rgba(15,31,28,0.45)] backdrop-blur-md">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              disabled={!canEdit || saveFlash}
+              onClick={handleSave}
+              className="min-w-0 flex-1 gap-1.5"
+            >
+              {saveFlash ? <Check size={16} /> : <Save size={16} />}
+              {saveFlash ? 'Saved' : 'Save'}
+            </Button>
+            {canSettle ? (
+              <Button
+                variant="secondary"
+                disabled={qzPrinting || printMutation.isPending || items.length === 0}
+                onClick={handlePrint}
+                className="min-w-0 flex-1 gap-1.5"
+              >
+                {qzPrinting || printMutation.isPending ? (
+                  <LoaderCircle size={16} className="animate-spin" />
+                ) : (
+                  <Printer size={16} />
+                )}
+                Print
+              </Button>
+            ) : null}
+            {canEdit && canSettle ? (
+              <Button
+                className="min-w-0 flex-1 gap-1.5"
+                disabled={items.length === 0}
+                onClick={() => setPaymentOpen(true)}
+              >
+                <Check size={16} />
+                Complete
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <PaymentMethodModal
         open={paymentOpen}
         orderLabel={`${table} · #${displayNo}`}
         totalLabel={formatMoney(order.total)}
+        orderTotal={Number(order.total || 0)}
         busy={completeMutation.isPending}
         onCancel={() => setPaymentOpen(false)}
         onConfirm={(payment) => completeMutation.mutate(payment)}

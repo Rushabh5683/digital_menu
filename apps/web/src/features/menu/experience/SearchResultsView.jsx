@@ -7,10 +7,13 @@ export function SearchResultsView({
   searchResult,
   shortlistIds,
   comparisonPair,
+  quantities = {},
   onOpenDetail,
   onToggleShortlist,
   onToggleCompare,
   onAddToOrder,
+  onIncrement,
+  onDecrement,
   onClearSearch,
   onRecoveryDishClicked,
   currency = 'INR',
@@ -52,10 +55,13 @@ export function SearchResultsView({
                     typeof item === 'string' ? item === dish.id : item?.id === dish.id,
                   ),
                 )}
+                quantity={quantities[dish.id] || 0}
                 onOpenDetail={onOpenDetail}
                 onToggleShortlist={onToggleShortlist}
                 onToggleCompare={onToggleCompare}
                 onAddToOrder={onAddToOrder}
+                onIncrement={onIncrement}
+                onDecrement={onDecrement}
                 currency={currency}
                 analyticsSource="search_results"
               />

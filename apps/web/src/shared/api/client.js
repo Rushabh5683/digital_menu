@@ -1,8 +1,41 @@
-const API_BASE_URL = import.meta.env.PROD
-  ? ''
-  : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000');
+// Empty = same-origin (/api via Vite proxy in local, or reverse proxy in prod).
+// Staging split hosts: set VITE_API_BASE_URL=https://your-api.example.com
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-async function request(path, options = {}) {
+const AUTH_SKIP_REFRESH = new Set([
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/refresh',
+]);
+
+let refreshInFlight = null;
+
+async function tryRefreshSession() {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const error = new Error('Session expired. Please sign in again.');
+      error.status = response.status;
+      throw error;
+    }
+
+    return response.json().catch(() => ({ ok: true }));
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
+}
+
+async function request(path, options = {}, { retry = true } = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const headers = {
     ...(options.headers || {}),
@@ -33,6 +66,20 @@ async function request(path, options = {}) {
   const isJson = contentType.includes('application/json');
   const body = isJson ? await response.json() : await response.text();
 
+  if (
+    response.status === 401 &&
+    retry &&
+    !AUTH_SKIP_REFRESH.has(path) &&
+    method !== 'HEAD'
+  ) {
+    try {
+      await tryRefreshSession();
+      return request(path, options, { retry: false });
+    } catch {
+      // Fall through to original 401 error below.
+    }
+  }
+
   if (!response.ok) {
     const message =
       (isJson && body && (body.message || body.error)) ||
@@ -55,6 +102,13 @@ export const api = {
     return request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  refreshSession() {
+    return request('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({}),
     });
   },
 
@@ -99,6 +153,10 @@ export const api = {
     return request('/api/admin/dashboard');
   },
 
+  getAdminStaffAppreciation() {
+    return request('/api/admin/staff-appreciation');
+  },
+
   getAdminSalesReport(params = {}) {
     return request(`/api/admin/reports/sales${toQuery(params)}`);
   },
@@ -110,6 +168,20 @@ export const api = {
   closeAdminDayEnd(payload = {}) {
     return request('/api/admin/day-end/close', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  unlockAdminDayEnd(payload = {}) {
+    return request('/api/admin/day-end/unlock', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateAdminOrderPayment(orderId, payload = {}) {
+    return request(`/api/admin/orders/${encodeURIComponent(orderId)}/payment`, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
     });
   },
@@ -133,6 +205,12 @@ export const api = {
     return request(`/api/admin/captains/${encodeURIComponent(captainId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  },
+
+  deleteAdminCaptain(captainId) {
+    return request(`/api/admin/captains/${encodeURIComponent(captainId)}`, {
+      method: 'DELETE',
     });
   },
 
@@ -244,6 +322,13 @@ export const api = {
 
   createAdminCategory(menuId, payload) {
     return request(`/api/admin/menus/${encodeURIComponent(menuId)}/categories`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  bulkCreateAdminCategories(menuId, payload) {
+    return request(`/api/admin/menus/${encodeURIComponent(menuId)}/categories/bulk`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

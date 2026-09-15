@@ -5,7 +5,11 @@ import {
   requireBoundRestaurantStaff,
   requireRestaurantAdminOnly,
 } from '../../middleware/restaurantAdmin.js';
-import { uploadDishImageMiddleware, uploadLogoMiddleware } from '../../middleware/upload.js';
+import {
+  toPublicUploadUrl,
+  uploadDishImageMiddleware,
+  uploadLogoMiddleware,
+} from '../../middleware/upload.js';
 import { asyncHandler } from '../../utils/validate.js';
 import { UserRoles } from '../auth/roles.js';
 import {
@@ -16,6 +20,7 @@ import {
   getAdminOrder,
   markAdminOrderBillPrinted,
   updateAdminOrderStatus,
+  updateAdminOrderPayment,
   startAdminTableOrder,
   addAdminOrderItems,
   updateAdminOrderItem,
@@ -26,10 +31,16 @@ import {
 import {
   createRestaurantCaptain,
   deactivateRestaurantCaptain,
+  deleteRestaurantCaptain,
   listRestaurantCaptains,
   updateRestaurantCaptain,
 } from './admin.captains.service.js';
 import {
+  getCaptainStaffAppreciation,
+  getStaffAppreciation,
+} from './admin.appreciation.service.js';
+import {
+  bulkCreateAdminCategories,
   createAdminCategory,
   createAdminDish,
   createAdminMenu,
@@ -61,7 +72,7 @@ import {
   listAdminQrCodes,
 } from './admin.qr.service.js';
 import { getAdminSalesReport } from './admin.reports.service.js';
-import { closeDayEnd, getDayEndStatus } from './admin.dayend.service.js';
+import { closeDayEnd, getDayEndStatus, unlockDayEnd } from './admin.dayend.service.js';
 
 export const adminRouter = Router();
 
@@ -122,6 +133,15 @@ adminRouter.post(
   }),
 );
 
+adminRouter.post(
+  '/day-end/unlock',
+  ...adminOnly,
+  asyncHandler(async (req, res) => {
+    const dayEnd = await unlockDayEnd(req.restaurantId, req.auth.userId, req.body || {});
+    res.json({ dayEnd });
+  }),
+);
+
 adminRouter.get(
   '/captains',
   ...adminOnly,
@@ -162,6 +182,27 @@ adminRouter.post(
   }),
 );
 
+adminRouter.delete(
+  '/captains/:captainId',
+  ...adminOnly,
+  asyncHandler(async (req, res) => {
+    const result = await deleteRestaurantCaptain(req.restaurantId, req.params.captainId);
+    res.json(result);
+  }),
+);
+
+adminRouter.get(
+  '/staff-appreciation',
+  asyncHandler(async (req, res) => {
+    if (req.auth.role === UserRoles.RESTAURANT_CAPTAIN) {
+      const result = await getCaptainStaffAppreciation(req.restaurantId, req.auth.userId);
+      return res.json(result);
+    }
+    const result = await getStaffAppreciation(req.restaurantId);
+    res.json(result);
+  }),
+);
+
 adminRouter.post(
   '/uploads/logo',
   ...adminOnly,
@@ -171,7 +212,7 @@ adminRouter.post(
       throw new AppError('Logo image is required', 400);
     }
 
-    const logoUrl = `/uploads/logos/${req.file.filename}`;
+    const logoUrl = toPublicUploadUrl(`/uploads/logos/${req.file.filename}`);
     res.status(201).json({
       ok: true,
       logoUrl,
@@ -238,6 +279,27 @@ adminRouter.patch(
       {
         paymentMethod: req.body?.paymentMethod,
         paymentNote: req.body?.paymentNote,
+        paymentSplits: req.body?.paymentSplits,
+        staffAppreciationAmount: req.body?.staffAppreciationAmount,
+        appreciationCaptainIds: req.body?.appreciationCaptainIds,
+        businessDate: req.body?.businessDate,
+      },
+    );
+    res.json(result);
+  }),
+);
+
+adminRouter.patch(
+  '/orders/:orderId/payment',
+  ...adminOnly,
+  asyncHandler(async (req, res) => {
+    const result = await updateAdminOrderPayment(
+      req.restaurantId,
+      req.params.orderId,
+      {
+        paymentMethod: req.body?.paymentMethod,
+        paymentNote: req.body?.paymentNote,
+        paymentSplits: req.body?.paymentSplits,
       },
     );
     res.json(result);
@@ -310,7 +372,7 @@ adminRouter.post(
       throw new AppError('Dish image is required', 400);
     }
 
-    const imageUrl = `/uploads/dishes/${req.file.filename}`;
+    const imageUrl = toPublicUploadUrl(`/uploads/dishes/${req.file.filename}`);
     res.status(201).json({
       ok: true,
       imageUrl,
@@ -389,6 +451,19 @@ adminRouter.post(
   ...adminOnly,
   asyncHandler(async (req, res) => {
     const result = await createAdminCategory(req.restaurantId, req.params.menuId, req.body);
+    res.status(201).json(result);
+  }),
+);
+
+adminRouter.post(
+  '/menus/:menuId/categories/bulk',
+  ...adminOnly,
+  asyncHandler(async (req, res) => {
+    const result = await bulkCreateAdminCategories(
+      req.restaurantId,
+      req.params.menuId,
+      req.body || {},
+    );
     res.status(201).json(result);
   }),
 );

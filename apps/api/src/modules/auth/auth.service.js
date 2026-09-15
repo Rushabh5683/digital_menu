@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { UserRoles } from './roles.js';
 import { serializeAuthUser } from './auth.serializer.js';
 import { signAuthToken } from './token.js';
+import { issueRefreshToken } from './refreshToken.service.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -40,7 +41,7 @@ export function validateLoginPayload(body = {}) {
   return { email, password };
 }
 
-export async function loginWithPassword({ email, password }) {
+export async function loginWithPassword({ email, password }, meta = {}) {
   const user = await prisma.user.findUnique({
     where: { email },
     include: {
@@ -69,9 +70,11 @@ export async function loginWithPassword({ email, password }) {
   }
 
   const token = signAuthToken(user);
+  const refresh = await issueRefreshToken(user.id, meta);
 
   return {
     token,
+    refreshToken: refresh.raw,
     user: serializeAuthUser(user),
   };
 }

@@ -2,6 +2,44 @@ import jwt from 'jsonwebtoken';
 import { env } from '../../config.js';
 import { AppError } from '../../middleware/errorHandler.js';
 
+export function parseExpiryMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value * 1000;
+  }
+
+  if (typeof value !== 'string') {
+    return 8 * 60 * 60 * 1000;
+  }
+
+  const match = /^(\d+)([smhd])$/i.exec(value.trim());
+  if (!match) {
+    return 8 * 60 * 60 * 1000;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multipliers = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+
+  return amount * multipliers[unit];
+}
+
+function cookieBase() {
+  const secure = env.cookieSecure || env.nodeEnv === 'production';
+  return {
+    httpOnly: true,
+    secure,
+    // Cross-origin web (Vercel) + API (Railway) needs None + Secure.
+    // Same-origin / local tunnel can keep Lax.
+    sameSite: secure ? 'none' : 'lax',
+    path: '/',
+  };
+}
+
 export function signAuthToken(user) {
   const payload = {
     sub: user.id,
@@ -26,50 +64,23 @@ export function verifyAuthToken(token) {
 }
 
 export function getAuthCookieOptions() {
-  const secure = env.cookieSecure || env.nodeEnv === 'production';
   return {
-    httpOnly: true,
-    secure,
-    // Cross-origin web (Vercel) + API (Railway) needs None + Secure.
-    // Same-origin / local tunnel can keep Lax.
-    sameSite: secure ? 'none' : 'lax',
-    path: '/',
+    ...cookieBase(),
     maxAge: parseExpiryMs(env.jwtExpiresIn),
   };
 }
 
-export function clearAuthCookieOptions() {
-  const secure = env.cookieSecure || env.nodeEnv === 'production';
+export function getRefreshCookieOptions() {
   return {
-    httpOnly: true,
-    secure,
-    sameSite: secure ? 'none' : 'lax',
-    path: '/',
+    ...cookieBase(),
+    maxAge: parseExpiryMs(env.refreshExpiresIn),
   };
 }
 
-function parseExpiryMs(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value * 1000;
-  }
+export function clearAuthCookieOptions() {
+  return cookieBase();
+}
 
-  if (typeof value !== 'string') {
-    return 8 * 60 * 60 * 1000;
-  }
-
-  const match = /^(\d+)([smhd])$/i.exec(value.trim());
-  if (!match) {
-    return 8 * 60 * 60 * 1000;
-  }
-
-  const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
-  const multipliers = {
-    s: 1000,
-    m: 60 * 1000,
-    h: 60 * 60 * 1000,
-    d: 24 * 60 * 60 * 1000,
-  };
-
-  return amount * multipliers[unit];
+export function clearRefreshCookieOptions() {
+  return cookieBase();
 }

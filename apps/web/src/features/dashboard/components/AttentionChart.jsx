@@ -30,9 +30,9 @@ export function AttentionChart({ categories }) {
     }));
 
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
+    <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">
             Customer attention
           </p>
@@ -48,9 +48,9 @@ export function AttentionChart({ categories }) {
           No section attention recorded in this range.
         </div>
       ) : (
-        <div className="h-72 w-full sm:h-80">
+        <div className="h-72 w-full min-w-0 sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+            <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(15,31,28,0.08)" />
               <XAxis
                 type="number"
@@ -61,9 +61,10 @@ export function AttentionChart({ categories }) {
               <YAxis
                 type="category"
                 dataKey="name"
-                width={110}
+                width={88}
                 stroke="rgba(15,31,28,0.35)"
-                fontSize={12}
+                fontSize={11}
+                tick={{ width: 80 }}
               />
               <Tooltip content={<AttentionTooltip />} cursor={{ fill: 'rgba(31,74,69,0.06)' }} />
               <Bar dataKey="averageAttentionSeconds" fill="#1f4a45" radius={[0, 8, 8, 0]} barSize={22} />

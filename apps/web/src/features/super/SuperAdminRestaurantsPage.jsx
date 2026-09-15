@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -11,11 +12,13 @@ import {
 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
+import { ScrollTable } from '../../shared/ui/ScrollTable.jsx';
 import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
 import { RestaurantForm } from './components/RestaurantForm.jsx';
 import { formatDate } from './lib/format.js';
 
 const PAGE_SIZE = 10;
+const ACTION_MENU_WIDTH = 176; // w-44
 
 export function SuperAdminRestaurantsPage() {
   const navigate = useNavigate();
@@ -29,7 +32,8 @@ export function SuperAdminRestaurantsPage() {
   const [confirm, setConfirm] = useState(null);
   const [formError, setFormError] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const [openMenuId, setOpenMenuId] = useState(null);
+  /** @type {[{ restaurant: object, top: number, left: number } | null, Function]} */
+  const [openMenu, setOpenMenu] = useState(null);
 
   const params = useMemo(
     () => ({
@@ -99,9 +103,9 @@ export function SuperAdminRestaurantsPage() {
   }
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">
             Restaurants
           </p>
@@ -121,16 +125,16 @@ export function SuperAdminRestaurantsPage() {
             setFormError(null);
             setCreateOpen(true);
           }}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
         >
           <Plus size={16} />
           Add restaurant
         </button>
       </div>
 
-      <div className="rounded-2xl border border-[var(--line)] bg-white/85 p-4 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <label className="relative flex-1">
+      <div className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-4 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:items-center lg:flex-nowrap">
+          <label className="relative min-w-0 flex-1 basis-full lg:basis-auto">
             <Search
               size={16}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
@@ -151,7 +155,7 @@ export function SuperAdminRestaurantsPage() {
               setStatus(e.target.value);
               setPage(1);
             }}
-            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--teal)]"
+            className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--teal)] sm:w-auto sm:min-w-[9.5rem]"
           >
             <option value="">All statuses</option>
             <option value="ACTIVE">Active</option>
@@ -164,7 +168,7 @@ export function SuperAdminRestaurantsPage() {
               setMenuStatus(e.target.value);
               setPage(1);
             }}
-            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--teal)]"
+            className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--teal)] sm:w-auto sm:min-w-[9.5rem]"
           >
             <option value="">All menus</option>
             <option value="PUBLISHED">Published</option>
@@ -175,7 +179,7 @@ export function SuperAdminRestaurantsPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="rounded-xl border border-[var(--line)] px-3 py-2.5 text-sm font-semibold text-[var(--muted)] hover:text-[var(--ink)]"
+              className="w-full rounded-xl border border-[var(--line)] px-3 py-2.5 text-sm font-semibold text-[var(--muted)] hover:text-[var(--ink)] sm:w-auto"
             >
               Clear
             </button>
@@ -188,7 +192,7 @@ export function SuperAdminRestaurantsPage() {
           </p>
         ) : null}
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 min-w-0">
           {restaurantsQuery.isLoading ? (
             <TableSkeleton />
           ) : restaurantsQuery.error ? (
@@ -202,129 +206,102 @@ export function SuperAdminRestaurantsPage() {
               onClear={resetFilters}
             />
           ) : (
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
-                  <th className="px-3 py-3 font-semibold">Restaurant</th>
-                  <th className="px-3 py-3 font-semibold">Admin</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                  <th className="px-3 py-3 font-semibold">Menu</th>
-                  <th className="px-3 py-3 font-semibold">Orders</th>
-                  <th className="px-3 py-3 font-semibold">Created</th>
-                  <th className="px-3 py-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {restaurants.map((restaurant) => (
-                  <tr
-                    key={restaurant.id}
-                    className="border-b border-[var(--line)]/70 transition hover:bg-[var(--surface-elevated)]/80 last:border-0"
-                  >
-                    <td className="px-3 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-elevated)]">
-                          {restaurant.logoUrl ? (
-                            <img
-                              src={restaurant.logoUrl}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <Building2 size={16} className="text-[var(--muted)]" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-[var(--ink)]">{restaurant.name}</p>
-                          <p className="text-xs text-[var(--muted)]">/{restaurant.slug}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3.5">
-                      {restaurant.admin ? (
-                        <div>
-                          <p className="font-medium text-[var(--ink)]">{restaurant.admin.name}</p>
-                          <p className="text-xs text-[var(--muted)]">{restaurant.admin.email}</p>
-                        </div>
-                      ) : (
-                        <span className="text-[var(--muted)]">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <StatusBadge status={restaurant.status} />
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <StatusBadge status={restaurant.menuStatus} />
-                    </td>
-                    <td className="px-3 py-3.5 text-[var(--ink)]">
-                      {restaurant.counts?.orders ?? 0}
-                    </td>
-                    <td className="px-3 py-3.5 text-[var(--muted)]">
-                      {formatDate(restaurant.createdAt)}
-                    </td>
-                    <td className="relative px-3 py-3.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenMenuId((id) => (id === restaurant.id ? null : restaurant.id))
-                        }
-                        className="inline-flex rounded-lg border border-[var(--line)] bg-white p-2 text-[var(--muted)] hover:text-[var(--ink)]"
-                        aria-label="Actions"
-                      >
-                        <MoreHorizontal size={16} />
-                      </button>
-                      {openMenuId === restaurant.id ? (
-                        <ActionMenu
-                          restaurant={restaurant}
-                          onClose={() => setOpenMenuId(null)}
-                          onView={() => {
-                            navigate(`/superadmin/restaurants/${restaurant.id}`);
-                            setOpenMenuId(null);
-                          }}
-                          onEdit={() => {
-                            setFormError(null);
-                            setEditRestaurant(restaurant);
-                            setOpenMenuId(null);
-                          }}
-                          onActivate={() => {
-                            setConfirm({
-                              type: 'status',
-                              restaurant,
-                              nextStatus: 'ACTIVE',
-                              title: 'Activate restaurant',
-                              message: `Make “${restaurant.name}” active and available on the customer menu?`,
-                              confirmLabel: 'Activate',
-                            });
-                            setOpenMenuId(null);
-                          }}
-                          onDeactivate={() => {
-                            setConfirm({
-                              type: 'status',
-                              restaurant,
-                              nextStatus: 'INACTIVE',
-                              title: 'Deactivate restaurant',
-                              message: `Deactivate “${restaurant.name}”? The public menu will become unavailable.`,
-                              confirmLabel: 'Deactivate',
-                            });
-                            setOpenMenuId(null);
-                          }}
-                          onDelete={() => {
-                            setConfirm({
-                              type: 'delete',
-                              restaurant,
-                              title: 'Delete restaurant',
-                              message: `Permanently delete “${restaurant.name}” and all related menus, sessions, and analytics? This cannot be undone.`,
-                              confirmLabel: 'Delete',
-                              danger: true,
-                            });
-                            setOpenMenuId(null);
-                          }}
-                        />
-                      ) : null}
-                    </td>
+            <ScrollTable minWidthClass="min-w-[52rem]">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
+                    <th className="px-3 py-3 font-semibold">Restaurant</th>
+                    <th className="px-3 py-3 font-semibold">Admin</th>
+                    <th className="px-3 py-3 font-semibold">Status</th>
+                    <th className="px-3 py-3 font-semibold">Menu</th>
+                    <th className="px-3 py-3 font-semibold">Orders</th>
+                    <th className="px-3 py-3 font-semibold">Created</th>
+                    <th className="px-3 py-3 font-semibold text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {restaurants.map((restaurant) => (
+                    <tr
+                      key={restaurant.id}
+                      className="border-b border-[var(--line)]/70 transition hover:bg-[var(--surface-elevated)]/80 last:border-0"
+                    >
+                      <td className="px-3 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-elevated)]">
+                            {restaurant.logoUrl ? (
+                              <img
+                                src={restaurant.logoUrl}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <Building2 size={16} className="text-[var(--muted)]" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[var(--ink)]">{restaurant.name}</p>
+                            <p className="text-xs text-[var(--muted)]">/{restaurant.slug}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        {restaurant.admin ? (
+                          <div className="min-w-0">
+                            <p className="font-medium text-[var(--ink)]">{restaurant.admin.name}</p>
+                            <p className="text-xs text-[var(--muted)]">{restaurant.admin.email}</p>
+                          </div>
+                        ) : (
+                          <span className="text-[var(--muted)]">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <StatusBadge status={restaurant.status} />
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <StatusBadge status={restaurant.menuStatus} />
+                      </td>
+                      <td className="px-3 py-3.5 text-[var(--ink)]">
+                        {restaurant.counts?.orders ?? 0}
+                      </td>
+                      <td className="px-3 py-3.5 text-[var(--muted)]">
+                        {formatDate(restaurant.createdAt)}
+                      </td>
+                      <td className="px-3 py-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const left = Math.min(
+                              Math.max(8, rect.right - ACTION_MENU_WIDTH),
+                              window.innerWidth - ACTION_MENU_WIDTH - 8,
+                            );
+                            const estimatedHeight = 220;
+                            const top =
+                              rect.bottom + 4 + estimatedHeight > window.innerHeight
+                                ? Math.max(8, rect.top - estimatedHeight - 4)
+                                : rect.bottom + 4;
+                            setOpenMenu((prev) =>
+                              prev?.restaurant.id === restaurant.id
+                                ? null
+                                : {
+                                    restaurant,
+                                    top,
+                                    left,
+                                  },
+                            );
+                          }}
+                          className="inline-flex rounded-lg border border-[var(--line)] bg-white p-2 text-[var(--muted)] hover:text-[var(--ink)]"
+                          aria-label="Actions"
+                          aria-expanded={openMenu?.restaurant.id === restaurant.id}
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </div>
 
@@ -404,6 +381,57 @@ export function SuperAdminRestaurantsPage() {
         />
       </Modal>
 
+      {openMenu ? (
+        <ActionMenu
+          restaurant={openMenu.restaurant}
+          top={openMenu.top}
+          left={openMenu.left}
+          onClose={() => setOpenMenu(null)}
+          onView={() => {
+            navigate(`/superadmin/restaurants/${openMenu.restaurant.id}`);
+            setOpenMenu(null);
+          }}
+          onEdit={() => {
+            setFormError(null);
+            setEditRestaurant(openMenu.restaurant);
+            setOpenMenu(null);
+          }}
+          onActivate={() => {
+            setConfirm({
+              type: 'status',
+              restaurant: openMenu.restaurant,
+              nextStatus: 'ACTIVE',
+              title: 'Activate restaurant',
+              message: `Make “${openMenu.restaurant.name}” active and available on the customer menu?`,
+              confirmLabel: 'Activate',
+            });
+            setOpenMenu(null);
+          }}
+          onDeactivate={() => {
+            setConfirm({
+              type: 'status',
+              restaurant: openMenu.restaurant,
+              nextStatus: 'INACTIVE',
+              title: 'Deactivate restaurant',
+              message: `Deactivate “${openMenu.restaurant.name}”? The public menu will become unavailable.`,
+              confirmLabel: 'Deactivate',
+            });
+            setOpenMenu(null);
+          }}
+          onDelete={() => {
+            setConfirm({
+              type: 'delete',
+              restaurant: openMenu.restaurant,
+              title: 'Delete restaurant',
+              message: `Permanently delete “${openMenu.restaurant.name}” and all related menus, sessions, and analytics? This cannot be undone.`,
+              confirmLabel: 'Delete',
+              danger: true,
+            });
+            setOpenMenu(null);
+          }}
+        />
+      ) : null}
+
       <ConfirmDialog
         open={Boolean(confirm)}
         title={confirm?.title}
@@ -430,6 +458,8 @@ export function SuperAdminRestaurantsPage() {
 
 function ActionMenu({
   restaurant,
+  top,
+  left,
   onClose,
   onView,
   onEdit,
@@ -437,10 +467,33 @@ function ActionMenu({
   onDeactivate,
   onDelete,
 }) {
-  return (
+  useLayoutEffect(() => {
+    function onKey(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    function onReposition() {
+      onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [onClose]);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <>
-      <button type="button" className="fixed inset-0 z-10 cursor-default" onClick={onClose} />
-      <div className="absolute right-3 top-12 z-20 w-44 overflow-hidden rounded-xl border border-[var(--line)] bg-white py-1 text-left shadow-lg">
+      <button type="button" className="fixed inset-0 z-[180] cursor-default" onClick={onClose} aria-label="Close menu" />
+      <div
+        role="menu"
+        className="fixed z-[190] w-44 overflow-hidden rounded-xl border border-[var(--line)] bg-white py-1 text-left shadow-lg"
+        style={{ top, left }}
+      >
         <MenuItem onClick={onView}>View</MenuItem>
         <MenuItem onClick={onEdit}>Edit</MenuItem>
         {restaurant.status !== 'ACTIVE' ? (
@@ -453,7 +506,8 @@ function ActionMenu({
           Delete
         </MenuItem>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 

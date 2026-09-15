@@ -90,7 +90,7 @@ export function HelpMeChooseModal({
       <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
         <button
           type="button"
-          className="absolute inset-0 cursor-default bg-stone-950/65 backdrop-blur-sm"
+          className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
           aria-label="Close Help Me Choose"
           onClick={onClose}
         />
@@ -101,7 +101,6 @@ export function HelpMeChooseModal({
           exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         >
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -254,24 +253,24 @@ export function HelpMeChooseModal({
             ) : null}
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-stone-200/80 bg-white/95 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-stone-200/80 bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
             {isResults ? (
               <button
                 type="button"
                 onClick={resetFlow}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-2 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-full px-2 py-2 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>Start over</span>
               </button>
             ) : (
-              <span className="text-[11px] text-stone-400">Tap a section to continue</span>
+              <span className="min-w-0 text-[11px] text-stone-400">Tap a section to continue</span>
             )}
 
             <button
               type="button"
               onClick={onClose}
-              className="cursor-pointer rounded-full bg-stone-950 px-5 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
+              className="min-h-10 shrink-0 cursor-pointer rounded-full bg-stone-950 px-5 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
             >
               {isResults ? 'Done' : 'Close'}
             </button>

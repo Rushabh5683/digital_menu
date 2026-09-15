@@ -1,4 +1,5 @@
 import { DIETARY_TAG_PRESETS } from '../../../../shared/constants/dietaryTags.js';
+import { resolveMediaUrl } from '../../../../shared/lib/mediaUrl.js';
 
 const SPICE_LABELS = ['No spice', 'Mild', 'Medium', 'Hot'];
 
@@ -129,6 +130,16 @@ function inferTexture(dish, text) {
 }
 
 function inferPortion(dish, text) {
+  const serveTag = (dish.dietaryTags || []).find((tag) =>
+    /^serves\s+\d/i.test(String(tag || '').trim()),
+  );
+  if (serveTag) {
+    const match = String(serveTag).match(/serves\s+(\d+)/i);
+    const n = match ? Number(match[1]) : 0;
+    if (n >= 5) return 'Best shared';
+    if (n >= 2) return 'Good for 2';
+    return 'Individual';
+  }
   if (/platter|share|sharing|family|feast|for (the )?table|good for (two|2)|serves 2|serves two/.test(text)) {
     if (/platter|feast|family|sharing platter/.test(text)) return 'Best shared';
     return 'Good for 2';
@@ -256,8 +267,8 @@ export function enrichDish(dish, { category, popularIds, allDishes } = {}) {
     name: dish.name || 'Untitled Dish',
     description: dish.description || '',
     price: Number(dish.price) || 0,
-    imageUrl: dish.imageUrl || dish.image || null,
-    image: dish.imageUrl || dish.image || PLACEHOLDER_GRADIENT,
+    imageUrl: resolveMediaUrl(dish.imageUrl || dish.image || '') || null,
+    image: resolveMediaUrl(dish.imageUrl || dish.image || '') || PLACEHOLDER_GRADIENT,
     category: categoryId,
     categoryId,
     categoryName,

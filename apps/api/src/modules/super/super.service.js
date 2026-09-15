@@ -31,12 +31,8 @@ function validateEmail(value, fieldName = 'email') {
 }
 
 function validatePhone(value, fieldName = 'phone number') {
-  const phone = typeof value === 'string' ? value.trim() : '';
-  if (!phone) throw new AppError(`${fieldName} is required`, 400);
-  if (!/^[0-9\s\-().]+$/.test(phone)) {
-    throw new AppError(`${fieldName} must be exactly 10 digits`, 400);
-  }
-  const digits = phone.replace(/\D/g, '');
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) throw new AppError(`${fieldName} is required`, 400);
   if (digits.length !== 10) {
     throw new AppError(`${fieldName} must be exactly 10 digits`, 400);
   }

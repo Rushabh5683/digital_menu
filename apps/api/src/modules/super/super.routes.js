@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AppError } from '../../middleware/errorHandler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
-import { uploadLogoMiddleware } from '../../middleware/upload.js';
+import { toPublicUploadUrl, uploadLogoMiddleware } from '../../middleware/upload.js';
 import { asyncHandler, validateCuid } from '../../utils/validate.js';
 import { UserRoles } from '../auth/roles.js';
 import { getAdminSalesReport } from '../admin/admin.reports.service.js';
@@ -39,7 +39,7 @@ superAdminRouter.post(
       throw new AppError('Logo image is required', 400);
     }
 
-    const logoUrl = `/uploads/logos/${req.file.filename}`;
+    const logoUrl = toPublicUploadUrl(`/uploads/logos/${req.file.filename}`);
     res.status(201).json({
       ok: true,
       logoUrl,

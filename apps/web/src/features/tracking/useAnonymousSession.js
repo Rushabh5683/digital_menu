@@ -44,18 +44,26 @@ function endSessionBestEffort(restaurantSlug, anonymousSessionId) {
  */
 export function useAnonymousSession(
   restaurantSlug,
-  { enabled = true, tableNumber = null } = {},
+  { enabled = true, tableNumber = null, preview = false } = {},
 ) {
   const [session, setSession] = useState(() =>
-    restaurantSlug ? getSessionContext(restaurantSlug) : null,
+    restaurantSlug && !preview ? getSessionContext(restaurantSlug) : null,
   );
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState(preview ? 'preview' : 'idle');
   const [error, setError] = useState(null);
   const anonymousIdRef = useRef(null);
   const startedRef = useRef(false);
   const endTimerRef = useRef(null);
 
   useEffect(() => {
+    if (preview) {
+      setSession(null);
+      setStatus('preview');
+      setError(null);
+      startedRef.current = false;
+      return undefined;
+    }
+
     if (!enabled || !restaurantSlug) return undefined;
 
     let cancelled = false;
@@ -79,6 +87,14 @@ export function useAnonymousSession(
         });
 
         if (cancelled) return;
+
+        // Server may refuse guest sessions for signed-in restaurant staff.
+        if (response.session?.preview || !response.session?.id) {
+          setSession(null);
+          setStatus('preview');
+          startedRef.current = false;
+          return;
+        }
 
         const next = {
           anonymousSessionId: response.session.anonymousSessionId,
@@ -137,7 +153,7 @@ export function useAnonymousSession(
         }, END_SESSION_GRACE_MS);
       }
     };
-  }, [restaurantSlug, enabled, tableNumber]);
+  }, [restaurantSlug, enabled, tableNumber, preview]);
 
   return { session, status, error };
 }

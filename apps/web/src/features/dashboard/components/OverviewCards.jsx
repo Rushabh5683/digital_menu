@@ -3,19 +3,19 @@ import { formatNumber, formatRate, formatSeconds } from '../lib/format.js';
 
 function Card({ icon: Icon, label, value, hint }) {
   return (
-    <article className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)]">
+    <article className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)]">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">{label}</p>
           <p
-            className="mt-2 text-3xl tracking-tight text-[var(--ink)]"
+            className="mt-2 truncate text-3xl tracking-tight text-[var(--ink)]"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             {value}
           </p>
           {hint ? <p className="mt-2 text-sm text-[var(--muted)]">{hint}</p> : null}
         </div>
-        <div className="rounded-xl bg-[var(--teal)]/10 p-2.5 text-[var(--teal)]">
+        <div className="shrink-0 rounded-xl bg-[var(--teal)]/10 p-2.5 text-[var(--teal)]">
           <Icon size={18} />
         </div>
       </div>
@@ -27,7 +27,7 @@ export function OverviewCards({ overview }) {
   const exitRate = overview?.menuExitMetrics?.menuExitRate;
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Card
         icon={Eye}
         label="Total Menu Sessions"

@@ -16,14 +16,24 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../shared/api/client.js';
+import { goBack } from '../../shared/lib/navigation.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { Field } from '../../shared/ui/Field.jsx';
 import { Input, Textarea } from '../../shared/ui/FormControls.jsx';
 import { ConfirmDialog } from '../../shared/ui/Modal.jsx';
+import { ScrollTable } from '../../shared/ui/ScrollTable.jsx';
 import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
 import { LogoUploadField } from './components/LogoUploadField.jsx';
 import { formatDate, formatDateTime } from './lib/format.js';
+import {
+  normalizeEmail,
+  normalizePhone,
+  sanitizePhoneInput,
+  validateEmailField,
+  validatePhoneField,
+} from '../../shared/lib/validation.js';
+import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -120,7 +130,10 @@ export function SuperAdminRestaurantDetailPage() {
     return (
       <div className="space-y-4 menu-fade-up">
         <Alert tone="error">{detailQuery.error?.message || 'Restaurant not found'}</Alert>
-        <Button variant="secondary" onClick={() => navigate('/superadmin/restaurants')}>
+        <Button
+          variant="secondary"
+          onClick={() => goBack(navigate, '/superadmin/restaurants')}
+        >
           Back to restaurants
         </Button>
       </div>
@@ -128,19 +141,19 @@ export function SuperAdminRestaurantDetailPage() {
   }
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => navigate('/superadmin/restaurants')}
+            onClick={() => goBack(navigate, '/superadmin/restaurants')}
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--muted)] hover:text-[var(--ink)]"
           >
             <ArrowLeft size={16} />
             Restaurants
           </button>
-          <div className="mt-3 flex items-start gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink)]">
+          <div className="mt-3 flex items-start gap-3 sm:gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink)] sm:h-16 sm:w-16">
               {restaurant.logoUrl ? (
                 <img src={restaurant.logoUrl} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -152,7 +165,7 @@ export function SuperAdminRestaurantDetailPage() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2
-                  className="text-3xl tracking-tight text-[var(--ink)]"
+                  className="break-words text-2xl tracking-tight text-[var(--ink)] sm:text-3xl"
                   style={{ fontFamily: 'var(--font-display)' }}
                 >
                   {restaurant.name}
@@ -160,7 +173,7 @@ export function SuperAdminRestaurantDetailPage() {
                 <StatusBadge status={restaurant.status} />
                 <StatusBadge status={restaurant.menuStatus} />
               </div>
-              <p className="mt-1 text-sm text-[var(--muted)]">
+              <p className="mt-1 break-words text-sm text-[var(--muted)]">
                 /{restaurant.slug}
                 {restaurant.admin ? ` · Admin ${restaurant.admin.name}` : ''}
               </p>
@@ -168,9 +181,9 @@ export function SuperAdminRestaurantDetailPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <a
-            href={`/menu/${restaurant.slug}`}
+            href={staffMenuPreviewPath(restaurant.slug)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-semibold text-[var(--ink)]"
@@ -209,7 +222,7 @@ export function SuperAdminRestaurantDetailPage() {
 
       {actionError ? <Alert tone="error">{actionError}</Alert> : null}
 
-      <div className="flex gap-2 overflow-x-auto border-b border-[var(--line)] no-scrollbar">
+      <div className="flex flex-wrap gap-x-1 gap-y-0 border-b border-[var(--line)]">
         {TABS.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
@@ -219,13 +232,13 @@ export function SuperAdminRestaurantDetailPage() {
               type="button"
               onClick={() => setTab(item.id)}
               className={[
-                'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition',
+                'inline-flex items-center gap-2 border-b-2 px-2.5 py-3 text-sm font-semibold transition sm:px-3',
                 active
                   ? 'border-[var(--ink)] text-[var(--ink)]'
                   : 'border-transparent text-[var(--muted)] hover:text-[var(--ink)]',
               ].join(' ')}
             >
-              <Icon size={15} />
+              <Icon size={15} className="shrink-0" />
               {item.label}
             </button>
           );
@@ -271,12 +284,12 @@ export function SuperAdminRestaurantDetailPage() {
 
 function Metric({ label, value, hint }) {
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-white/90 px-4 py-4 shadow-[0_12px_30px_-24px_rgba(15,31,28,0.45)]">
+    <div className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/90 px-4 py-4 shadow-[0_12px_30px_-24px_rgba(15,31,28,0.45)]">
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
         {label}
       </p>
       <p
-        className="mt-2 text-2xl tracking-tight text-[var(--ink)]"
+        className="mt-2 truncate text-2xl tracking-tight text-[var(--ink)]"
         style={{ fontFamily: 'var(--font-display)' }}
       >
         {value}
@@ -288,15 +301,15 @@ function Metric({ label, value, hint }) {
 
 function Panel({ title, description, children, action }) {
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-white/90 p-5 shadow-[0_12px_30px_-24px_rgba(15,31,28,0.4)]">
+    <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/90 p-4 shadow-[0_12px_30px_-24px_rgba(15,31,28,0.4)] sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[var(--ink)]">{title}</h3>
           {description ? <p className="mt-1 text-sm text-[var(--muted)]">{description}</p> : null}
         </div>
         {action || null}
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-4 min-w-0">{children}</div>
     </section>
   );
 }
@@ -325,7 +338,7 @@ function OverviewTab({ restaurant }) {
   const maxPayment = Math.max(1, ...payments.map((p) => Number(p.amount || 0)));
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <Panel
         title="Setup health"
         description={
@@ -648,7 +661,7 @@ function SuperBillDrawer({ restaurantId, orderId, onClose }) {
     >
       <button
         type="button"
-        className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
+        className="absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
         aria-label="Close"
         onClick={onClose}
       />
@@ -777,9 +790,9 @@ function SuperBillDrawer({ restaurantId, orderId, onClose }) {
 
 function Row({ label, value }) {
   return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-3">
+    <div className="grid grid-cols-1 gap-0.5 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
       <dt className="text-[var(--muted)]">{label}</dt>
-      <dd className="font-medium text-[var(--ink)]">{value}</dd>
+      <dd className="min-w-0 break-words font-medium text-[var(--ink)]">{value}</dd>
     </div>
   );
 }
@@ -890,30 +903,30 @@ function OrdersTab({ restaurant, ordersQuery }) {
         ) : orders.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">No orders for this restaurant yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <ScrollTable minWidthClass="min-w-[36rem]">
+            <table className="w-full text-left text-sm">
               <thead className="text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
                 <tr>
-                  <th className="pb-2 font-semibold">Order</th>
-                  <th className="pb-2 font-semibold">Table</th>
-                  <th className="pb-2 font-semibold">Status</th>
-                  <th className="pb-2 font-semibold">Total</th>
+                  <th className="pb-2 pr-3 font-semibold">Order</th>
+                  <th className="pb-2 pr-3 font-semibold">Table</th>
+                  <th className="pb-2 pr-3 font-semibold">Status</th>
+                  <th className="pb-2 pr-3 font-semibold">Total</th>
                   <th className="pb-2 font-semibold">When</th>
                 </tr>
               </thead>
               <tbody>
                 {orders.map((order) => (
                   <tr key={order.id} className="border-t border-[var(--line)]">
-                    <td className="py-3 font-semibold text-[var(--ink)]">
+                    <td className="py-3 pr-3 font-semibold text-[var(--ink)]">
                       #{order.orderNumber}
                     </td>
-                    <td className="py-3 text-[var(--muted)]">
+                    <td className="py-3 pr-3 text-[var(--muted)]">
                       {order.tableNumber ?? order.table?.tableNumber ?? '—'}
                     </td>
-                    <td className="py-3">
+                    <td className="py-3 pr-3">
                       <StatusBadge status={order.status} />
                     </td>
-                    <td className="py-3 font-semibold">{formatMoney(order.total)}</td>
+                    <td className="py-3 pr-3 font-semibold">{formatMoney(order.total)}</td>
                     <td className="py-3 text-[var(--muted)]">
                       {formatDateTime(order.createdAt || order.placedAt)}
                     </td>
@@ -921,7 +934,7 @@ function OrdersTab({ restaurant, ordersQuery }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
       </Panel>
     </div>
@@ -994,7 +1007,7 @@ function SettingsTab({ restaurant, onSaved }) {
     name: restaurant.name || '',
     description: restaurant.description || '',
     email: restaurant.email || '',
-    phone: restaurant.phone || '',
+    phone: sanitizePhoneInput(restaurant.phone || ''),
     address: restaurant.address || '',
     logoUrl: restaurant.logoUrl || '',
     status: restaurant.status || 'ACTIVE',
@@ -1012,7 +1025,9 @@ function SettingsTab({ restaurant, onSaved }) {
     temporaryPassword: '',
   }));
   const [profileError, setProfileError] = useState(null);
+  const [profileFieldErrors, setProfileFieldErrors] = useState({});
   const [adminError, setAdminError] = useState(null);
+  const [adminFieldErrors, setAdminFieldErrors] = useState({});
   const [profileSaved, setProfileSaved] = useState(false);
   const [adminSaved, setAdminSaved] = useState(false);
 
@@ -1021,7 +1036,7 @@ function SettingsTab({ restaurant, onSaved }) {
       name: restaurant.name || '',
       description: restaurant.description || '',
       email: restaurant.email || '',
-      phone: restaurant.phone || '',
+      phone: sanitizePhoneInput(restaurant.phone || ''),
       address: restaurant.address || '',
       logoUrl: restaurant.logoUrl || '',
       status: restaurant.status || 'ACTIVE',
@@ -1038,36 +1053,86 @@ function SettingsTab({ restaurant, onSaved }) {
       isActive: restaurant.admin?.isActive ?? true,
       temporaryPassword: '',
     });
+    setProfileFieldErrors({});
+    setAdminFieldErrors({});
   }, [restaurant]);
 
   const profileMutation = useMutation({
     mutationFn: (payload) => api.updateSuperRestaurant(restaurant.id, payload),
     onSuccess: async () => {
       setProfileError(null);
+      setProfileFieldErrors({});
       setProfileSaved(true);
       window.setTimeout(() => setProfileSaved(false), 2000);
       await onSaved?.();
     },
-    onError: (error) => setProfileError(error.message),
+    onError: (error) => {
+      setProfileError(error.message);
+      setProfileFieldErrors(error.body?.details?.fields || error.body?.fields || {});
+    },
   });
 
   const adminMutation = useMutation({
     mutationFn: (payload) => api.updateSuperRestaurantAdmin(restaurant.id, payload),
     onSuccess: async () => {
       setAdminError(null);
+      setAdminFieldErrors({});
       setAdminSaved(true);
       setAdmin((prev) => ({ ...prev, temporaryPassword: '' }));
       window.setTimeout(() => setAdminSaved(false), 2000);
       await onSaved?.();
     },
-    onError: (error) => setAdminError(error.message),
+    onError: (error) => {
+      setAdminError(error.message);
+      setAdminFieldErrors(error.body?.details?.fields || error.body?.fields || {});
+    },
   });
+
+  function saveProfile() {
+    setProfileError(null);
+    const nextErrors = {};
+    const phoneError = validatePhoneField(profile.phone, { required: false });
+    if (phoneError) nextErrors.phone = phoneError;
+    const emailError = validateEmailField(profile.email, { required: false });
+    if (emailError) nextErrors.email = emailError;
+    if (Object.keys(nextErrors).length > 0) {
+      setProfileFieldErrors(nextErrors);
+      return;
+    }
+    setProfileFieldErrors({});
+    profileMutation.mutate({
+      ...profile,
+      email: profile.email ? normalizeEmail(profile.email) : '',
+      phone: profile.phone ? normalizePhone(profile.phone) : '',
+      gstin: profile.gstin.trim() || null,
+      fssaiLicense: profile.fssaiLicense.trim() || null,
+      billThanksMessage: profile.billThanksMessage.trim(),
+      cgstRate: Number(profile.cgstRate),
+      sgstRate: Number(profile.sgstRate),
+    });
+  }
+
+  function saveAdmin() {
+    setAdminError(null);
+    const emailError = validateEmailField(admin.email, { required: true, label: 'Admin email' });
+    if (emailError) {
+      setAdminFieldErrors({ email: emailError });
+      return;
+    }
+    setAdminFieldErrors({});
+    adminMutation.mutate({
+      name: admin.name,
+      email: normalizeEmail(admin.email),
+      isActive: admin.isActive,
+      temporaryPassword: admin.temporaryPassword || undefined,
+    });
+  }
 
   return (
     <div className="space-y-5">
       <Panel title="Edit restaurant" description="Update profile and activation status.">
         {profileError ? <Alert tone="error">{profileError}</Alert> : null}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name" htmlFor="sa-name">
             <Input
               id="sa-name"
@@ -1087,27 +1152,58 @@ function SettingsTab({ restaurant, onSaved }) {
               <option value="PENDING">Pending</option>
             </select>
           </Field>
-          <Field label="Email" htmlFor="sa-email">
+          <Field label="Email" htmlFor="sa-email" error={profileFieldErrors.email}>
             <Input
               id="sa-email"
+              type="email"
+              autoComplete="email"
               value={profile.email}
-              onChange={(event) => setProfile((prev) => ({ ...prev, email: event.target.value }))}
+              onChange={(event) => {
+                setProfile((prev) => ({ ...prev, email: event.target.value }));
+                setProfileFieldErrors((prev) => {
+                  if (!prev.email) return prev;
+                  const next = { ...prev };
+                  delete next.email;
+                  return next;
+                });
+              }}
             />
           </Field>
-          <Field label="Phone" htmlFor="sa-phone">
+          <Field
+            label="Phone"
+            htmlFor="sa-phone"
+            error={profileFieldErrors.phone}
+            hint="10 digits only"
+          >
             <Input
               id="sa-phone"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={10}
               value={profile.phone}
-              onChange={(event) => setProfile((prev) => ({ ...prev, phone: event.target.value }))}
+              onChange={(event) => {
+                setProfile((prev) => ({
+                  ...prev,
+                  phone: sanitizePhoneInput(event.target.value),
+                }));
+                setProfileFieldErrors((prev) => {
+                  if (!prev.phone) return prev;
+                  const next = { ...prev };
+                  delete next.phone;
+                  return next;
+                });
+              }}
+              placeholder="9876543210"
             />
           </Field>
-          <div className="lg:col-span-2">
+          <div className="sm:col-span-2">
             <LogoUploadField
               value={profile.logoUrl}
               onChange={(logoUrl) => setProfile((prev) => ({ ...prev, logoUrl }))}
             />
           </div>
-          <div className="lg:col-span-2">
+          <div className="sm:col-span-2">
             <Field label="Description" htmlFor="sa-desc">
               <Textarea
                 id="sa-desc"
@@ -1119,7 +1215,7 @@ function SettingsTab({ restaurant, onSaved }) {
               />
             </Field>
           </div>
-          <div className="lg:col-span-2">
+          <div className="sm:col-span-2">
             <Field label="Address" htmlFor="sa-address">
               <Textarea
                 id="sa-address"
@@ -1132,20 +1228,8 @@ function SettingsTab({ restaurant, onSaved }) {
             </Field>
           </div>
         </div>
-        <div className="mt-4 flex items-center gap-3">
-          <Button
-            disabled={profileMutation.isPending}
-            onClick={() =>
-              profileMutation.mutate({
-                ...profile,
-                gstin: profile.gstin.trim() || null,
-                fssaiLicense: profile.fssaiLicense.trim() || null,
-                billThanksMessage: profile.billThanksMessage.trim(),
-                cgstRate: Number(profile.cgstRate),
-                sgstRate: Number(profile.sgstRate),
-              })
-            }
-          >
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button disabled={profileMutation.isPending} onClick={saveProfile}>
             {profileMutation.isPending ? 'Saving…' : 'Save restaurant'}
           </Button>
           {profileSaved ? (
@@ -1158,7 +1242,7 @@ function SettingsTab({ restaurant, onSaved }) {
         title="Billing & compliance"
         description="GST and FSSAI appear on printed bills. Tax is exclusive of menu prices."
       >
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Enable GST" htmlFor="sa-gst-enabled">
             <select
               id="sa-gst-enabled"
@@ -1225,7 +1309,7 @@ function SettingsTab({ restaurant, onSaved }) {
               placeholder="Optional"
             />
           </Field>
-          <div className="lg:col-span-2">
+          <div className="sm:col-span-2">
             <Field label="Bill thanks message" htmlFor="sa-thanks">
               <Textarea
                 id="sa-thanks"
@@ -1255,7 +1339,7 @@ function SettingsTab({ restaurant, onSaved }) {
           </p>
         ) : (
           <>
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Admin name" htmlFor="sa-admin-name">
                 <Input
                   id="sa-admin-name"
@@ -1263,11 +1347,21 @@ function SettingsTab({ restaurant, onSaved }) {
                   onChange={(event) => setAdmin((prev) => ({ ...prev, name: event.target.value }))}
                 />
               </Field>
-              <Field label="Admin email" htmlFor="sa-admin-email">
+              <Field label="Admin email" htmlFor="sa-admin-email" error={adminFieldErrors.email}>
                 <Input
                   id="sa-admin-email"
+                  type="email"
+                  autoComplete="off"
                   value={admin.email}
-                  onChange={(event) => setAdmin((prev) => ({ ...prev, email: event.target.value }))}
+                  onChange={(event) => {
+                    setAdmin((prev) => ({ ...prev, email: event.target.value }));
+                    setAdminFieldErrors((prev) => {
+                      if (!prev.email) return prev;
+                      const next = { ...prev };
+                      delete next.email;
+                      return next;
+                    });
+                  }}
                 />
               </Field>
               <Field label="New temporary password" htmlFor="sa-admin-pass" hint="Leave blank to keep current password.">
@@ -1298,21 +1392,8 @@ function SettingsTab({ restaurant, onSaved }) {
                 </select>
               </Field>
             </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Button
-                disabled={adminMutation.isPending}
-                onClick={() => {
-                  const payload = {
-                    name: admin.name,
-                    email: admin.email,
-                    isActive: admin.isActive,
-                  };
-                  if (admin.temporaryPassword.trim()) {
-                    payload.temporaryPassword = admin.temporaryPassword.trim();
-                  }
-                  adminMutation.mutate(payload);
-                }}
-              >
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button disabled={adminMutation.isPending} onClick={saveAdmin}>
                 {adminMutation.isPending ? 'Saving…' : 'Save admin'}
               </Button>
               {adminSaved ? (

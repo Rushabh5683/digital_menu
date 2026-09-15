@@ -172,7 +172,7 @@ export function DishDetailDrawer({
     <AnimatePresence>
       {open && dish ? (
         <motion.div
-          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-6"
+          className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="dish-detail-title"
@@ -182,7 +182,7 @@ export function DishDetailDrawer({
         >
           <motion.button
             type="button"
-            className="drawer-backdrop absolute inset-0 bg-[#1c1915]/35 backdrop-blur-sm"
+            className="drawer-backdrop absolute inset-0 bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
             aria-label="Close dish details"
             onClick={onClose}
             initial={{ opacity: 0 }}

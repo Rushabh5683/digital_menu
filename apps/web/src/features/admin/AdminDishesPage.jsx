@@ -9,7 +9,8 @@ import { Field } from '../../shared/ui/Field.jsx';
 import { Input, Select, Textarea } from '../../shared/ui/FormControls.jsx';
 import { FormSection } from '../../shared/ui/FormSection.jsx';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
-import { DIETARY_TAG_GROUPS, DIETARY_TAG_PRESETS, SIGNATURE_DISH_TAG } from '../../shared/constants/dietaryTags.js';
+import { DIETARY_TAG_GROUPS, DIETARY_TAG_PRESETS, SERVES_TAG_PRESETS, SIGNATURE_DISH_TAG, isServesTag } from '../../shared/constants/dietaryTags.js';
+import { resolveMediaUrl } from '../../shared/lib/mediaUrl.js';
 
 function formatMoney(value) {
   return new Intl.NumberFormat('en-IN', {
@@ -191,9 +192,9 @@ export function AdminDishesPage() {
   }
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">Dishes</p>
           <h2
             className="mt-2 text-3xl tracking-tight text-[var(--ink)]"
@@ -211,7 +212,7 @@ export function AdminDishesPage() {
         </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
         <Field label="Menu" htmlFor="dish-menu">
           <Select
             id="dish-menu"
@@ -316,7 +317,7 @@ export function AdminDishesPage() {
                 <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-black/[0.03]">
                   {dish.imageUrl ? (
                     <img
-                      src={dish.imageUrl}
+                      src={resolveMediaUrl(dish.imageUrl)}
                       alt=""
                       className="h-full w-full object-cover"
                     />
@@ -448,6 +449,12 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
   const [imageUrl, setImageUrl] = useState(initial.imageUrl || '');
   const [ingredients, setIngredients] = useState(initial.ingredients || '');
   const [dietaryTags, setDietaryTags] = useState(initial.dietaryTags || []);
+  const [customByGroup, setCustomByGroup] = useState(() => {
+    const extras = (initial.dietaryTags || []).filter((tag) => !DIETARY_TAG_PRESETS.includes(tag));
+    return extras.length ? { Other: extras } : {};
+  });
+  const [addingGroup, setAddingGroup] = useState(null);
+  const [customDraft, setCustomDraft] = useState('');
   const [isAvailable, setIsAvailable] = useState(initial.isAvailable !== false);
   const [categoryId, setCategoryId] = useState(initial.categoryId || '');
   const [localError, setLocalError] = useState(null);
@@ -474,32 +481,103 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
   }
 
   function toggleTag(tag) {
-    setDietaryTags((current) =>
-      current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag],
+    setDietaryTags((current) => {
+      if (current.includes(tag)) {
+        return current.filter((item) => item !== tag);
+      }
+      // Portion size is single-select — picking Serves 3 clears Serves 2, etc.
+      if (isServesTag(tag) || SERVES_TAG_PRESETS.includes(tag)) {
+        return [...current.filter((item) => !isServesTag(item)), tag];
+      }
+      return [...current, tag];
+    });
+  }
+
+  function removeCustomTag(groupLabel, tag) {
+    setDietaryTags((current) => current.filter((item) => item !== tag));
+    setCustomByGroup((current) => {
+      const nextTags = (current[groupLabel] || []).filter((item) => item !== tag);
+      const next = { ...current };
+      if (nextTags.length === 0) delete next[groupLabel];
+      else next[groupLabel] = nextTags;
+      return next;
+    });
+  }
+
+  function commitCustomTag(groupLabel) {
+    const tag = customDraft.trim().replace(/\s+/g, ' ');
+    if (!tag) {
+      setLocalError('Enter a custom tag name');
+      return;
+    }
+    if (tag.length > 40) {
+      setLocalError('Custom tag must be 40 characters or fewer');
+      return;
+    }
+
+    const presetMatch = DIETARY_TAG_PRESETS.find(
+      (preset) => preset.toLowerCase() === tag.toLowerCase(),
     );
+    if (presetMatch) {
+      setDietaryTags((current) => {
+        if (current.includes(presetMatch)) return current;
+        if (isServesTag(presetMatch) || groupLabel === 'Serves') {
+          return [...current.filter((item) => !isServesTag(item)), presetMatch];
+        }
+        return [...current, presetMatch];
+      });
+      setCustomDraft('');
+      setAddingGroup(null);
+      setLocalError(null);
+      return;
+    }
+
+    const existingCustom = Object.values(customByGroup)
+      .flat()
+      .find((item) => item.toLowerCase() === tag.toLowerCase());
+    if (existingCustom) {
+      setDietaryTags((current) => {
+        if (current.includes(existingCustom)) return current;
+        if (isServesTag(existingCustom) || groupLabel === 'Serves') {
+          return [...current.filter((item) => !isServesTag(item)), existingCustom];
+        }
+        return [...current, existingCustom];
+      });
+      setCustomDraft('');
+      setAddingGroup(null);
+      setLocalError(null);
+      return;
+    }
+
+    setDietaryTags((current) => {
+      if (groupLabel === 'Serves' || isServesTag(tag)) {
+        return [...current.filter((item) => !isServesTag(item)), tag];
+      }
+      return [...current, tag];
+    });
+    setCustomByGroup((current) => ({
+      ...current,
+      [groupLabel]: [...(current[groupLabel] || []), tag],
+    }));
+    setCustomDraft('');
+    setAddingGroup(null);
+    setLocalError(null);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
+    setLocalError(null);
     const trimmedName = name.trim();
-    if (!trimmedName) {
-      setLocalError('Dish name is required');
-      return;
-    }
+    const trimmedDescription = description.trim();
     const priceNumber = Number(price);
     if (!Number.isFinite(priceNumber) || priceNumber < 0) {
       setLocalError('Enter a valid price ≥ 0');
       return;
     }
-    if (!categoryId) {
-      setLocalError('Category is required');
-      return;
-    }
-    setLocalError(null);
     onSubmit({
       categoryId,
       name: trimmedName,
-      description: description.trim(),
+      description: trimmedDescription,
       price: priceNumber,
       imageUrl: imageUrl || null,
       ingredients: parseList(ingredients),
@@ -513,7 +591,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
       {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
 
       <FormSection title="Basics">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name" htmlFor="dish-name" required className="sm:col-span-2">
             <Input
               id="dish-name"
@@ -523,6 +601,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               maxLength={120}
               disabled={loading}
               autoFocus
+              required
             />
           </Field>
           <Field label="Category" htmlFor="dish-form-category" required>
@@ -531,7 +610,9 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               value={categoryId}
               onChange={(event) => setCategoryId(event.target.value)}
               disabled={loading}
+              required
             >
+              <option value="">Select category</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
@@ -548,10 +629,11 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               value={price}
               onChange={(event) => setPrice(event.target.value)}
               disabled={loading}
+              required
             />
           </Field>
         </div>
-        <Field label="Description" htmlFor="dish-description">
+        <Field label="Description" htmlFor="dish-description" required>
           <Textarea
             id="dish-description"
             value={description}
@@ -559,6 +641,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             rows={3}
             disabled={loading}
             placeholder="Short guest-facing description"
+            required
           />
         </Field>
         <Field
@@ -609,60 +692,117 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
 
       <FormSection
         title="Dietary tags"
-        description="Tap only what applies — presets only. Keep dish setup under a minute."
+        description="Tap presets that apply. Serves is single-select (pick one portion size). You can also add a custom tag in any section."
       >
         <div className="space-y-4">
-          {DIETARY_TAG_GROUPS.map((group) => (
-            <div key={group.label}>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                {group.label}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {group.tags.map((tag) => {
-                  const active = dietaryTags.includes(tag);
-                  const label = tag === SIGNATURE_DISH_TAG ? 'Signature Dish' : tag;
-                  return (
+          {[
+            ...DIETARY_TAG_GROUPS,
+            ...((customByGroup.Other || []).length > 0
+              ? [{ label: 'Other', tags: [] }]
+              : []),
+          ].map((group) => {
+            const groupCustoms = customByGroup[group.label] || [];
+            const isAdding = addingGroup === group.label;
+            return (
+              <div key={group.label}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  {group.label}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {group.tags.map((tag) => {
+                    const active = dietaryTags.includes(tag);
+                    const label = tag === SIGNATURE_DISH_TAG ? 'Signature Dish' : tag;
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => toggleTag(tag)}
+                        className={[
+                          'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                          active
+                            ? 'border-[var(--teal)] bg-[var(--teal)]/10 text-[var(--teal)]'
+                            : 'border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--teal)]/40',
+                        ].join(' ')}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                  {groupCustoms.map((tag) => (
                     <button
-                      key={tag}
+                      key={`custom-${group.label}-${tag}`}
                       type="button"
                       disabled={loading}
-                      onClick={() => toggleTag(tag)}
-                      className={[
-                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                        active
-                          ? 'border-[var(--teal)] bg-[var(--teal)]/10 text-[var(--teal)]'
-                          : 'border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--teal)]/40',
-                      ].join(' ')}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          {dietaryTags.filter((tag) => !DIETARY_TAG_PRESETS.includes(tag)).length > 0 ? (
-            <div>
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                Legacy tags (tap to remove)
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {dietaryTags
-                  .filter((tag) => !DIETARY_TAG_PRESETS.includes(tag))
-                  .map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      disabled={loading}
-                      onClick={() => toggleTag(tag)}
+                      onClick={() => removeCustomTag(group.label, tag)}
                       className="rounded-full border border-[var(--teal)] bg-[var(--teal)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--teal)]"
+                      title="Remove custom tag"
                     >
                       {tag} ×
                     </button>
                   ))}
+                  {!isAdding ? (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setAddingGroup(group.label);
+                        setCustomDraft('');
+                        setLocalError(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:border-[var(--teal)]/50 hover:text-[var(--teal)]"
+                    >
+                      <Plus size={12} />
+                      Custom tag
+                    </button>
+                  ) : null}
+                </div>
+                {isAdding ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Input
+                      value={customDraft}
+                      onChange={(event) => setCustomDraft(event.target.value)}
+                      placeholder={`Custom ${group.label.toLowerCase()} tag`}
+                      maxLength={40}
+                      disabled={loading}
+                      autoFocus
+                      className="max-w-xs !rounded-xl !px-3 !py-2"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          commitCustomTag(group.label);
+                        }
+                        if (event.key === 'Escape') {
+                          setAddingGroup(null);
+                          setCustomDraft('');
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={loading || !customDraft.trim()}
+                      onClick={() => commitCustomTag(group.label)}
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={loading}
+                      onClick={() => {
+                        setAddingGroup(null);
+                        setCustomDraft('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : null}
+            );
+          })}
         </div>
       </FormSection>
 
@@ -670,7 +810,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="h-28 w-40 overflow-hidden rounded-2xl border border-[var(--line)] bg-black/[0.03]">
             {imageUrl ? (
-              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+              <img src={resolveMediaUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--muted)]">
                 <ImagePlus size={20} />

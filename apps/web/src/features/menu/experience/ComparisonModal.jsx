@@ -139,7 +139,7 @@ export function ComparisonModal({
         <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
           <button
             type="button"
-            className="absolute inset-0 cursor-default bg-stone-950/65 backdrop-blur-sm"
+            className="absolute inset-0 cursor-default bg-[var(--g-ink)]/15 backdrop-blur-[2px]"
             aria-label="Close comparison"
             onClick={onClose}
           />
@@ -150,7 +150,6 @@ export function ComparisonModal({
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-3.5 py-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -177,7 +176,8 @@ export function ComparisonModal({
             </div>
 
             <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3.5 py-3.5 no-scrollbar">
-              <div className="grid min-w-0 grid-cols-2 gap-2">
+              {/* Side-by-side from ~360px up; stacked on very narrow phones */}
+              <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
                 {[dishA, dishB].map((dish, slot) => (
                   <div
                     key={`${slot}-${dish.id}`}
@@ -217,7 +217,7 @@ export function ComparisonModal({
                         <button
                           type="button"
                           onClick={() => openPicker(slot)}
-                          className={`mt-0.5 inline-flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border px-2 py-1.5 text-[10px] font-semibold ${
+                          className={`mt-0.5 inline-flex w-full min-h-9 cursor-pointer items-center justify-center gap-1 rounded-full border px-2 py-1.5 text-[10px] font-semibold ${
                             pickingSlot === slot
                               ? 'border-[#9A7B4F] bg-[#9A7B4F]/10 text-[#9A7B4F]'
                               : 'border-stone-200 bg-stone-50 text-stone-700'
@@ -232,7 +232,7 @@ export function ComparisonModal({
                         <button
                           type="button"
                           onClick={() => onToggleShortlist?.(dish)}
-                          className={`flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-0.5 rounded-full px-1 py-1.5 text-[10px] font-medium ${
+                          className={`flex min-h-9 min-w-0 flex-1 cursor-pointer items-center justify-center gap-0.5 rounded-full px-1 py-1.5 text-[10px] font-medium ${
                             shortlistIds?.has(dish.id)
                               ? 'bg-stone-950 text-[#E0CDA9]'
                               : 'bg-stone-100 text-stone-800'
@@ -251,7 +251,7 @@ export function ComparisonModal({
                             onClose();
                             onOpenDishDetail?.(dish);
                           }}
-                          className="shrink-0 cursor-pointer rounded-full border border-stone-200 px-2.5 py-1.5 text-[10px] text-stone-600"
+                          className="min-h-9 shrink-0 cursor-pointer rounded-full border border-stone-200 px-2.5 py-1.5 text-[10px] text-stone-600"
                         >
                           Detail
                         </button>
@@ -387,44 +387,49 @@ export function ComparisonModal({
                 </div>
               ) : null}
 
-              <div className="overflow-hidden rounded-xl border border-stone-200/80 bg-white">
-                <div className="grid grid-cols-[4.5rem_1fr_1fr] gap-0 border-b border-stone-200/80 bg-stone-50/90 px-2 py-2">
-                  <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400">
-                    Vs
-                  </span>
-                  <span className="truncate px-1 font-serif text-[11px] font-medium text-stone-900">
-                    {dishA.name}
-                  </span>
-                  <span className="truncate px-1 font-serif text-[11px] font-medium text-stone-900">
-                    {dishB.name}
-                  </span>
-                </div>
-                <div className="divide-y divide-stone-100">
-                  {rows.map((row) => (
-                    <div
-                      key={row.label}
-                      className="grid grid-cols-[4.5rem_1fr_1fr] gap-0 px-2 py-2.5"
-                    >
-                      <span className="pr-1 text-[10px] font-medium leading-snug text-stone-500">
-                        {row.label.replace(' Profile', '').replace(' Level', '')}
+              <div className="min-w-0 overflow-hidden rounded-xl border border-stone-200/80 bg-white">
+                {/* Horizontal scroll only inside the table — keeps 3-col compare readable at 320px */}
+                <div className="overflow-x-auto overscroll-x-contain">
+                  <div className="min-w-[17.5rem]">
+                    <div className="grid grid-cols-[3.75rem_minmax(0,1fr)_minmax(0,1fr)] gap-0 border-b border-stone-200/80 bg-stone-50/90 px-2 py-2">
+                      <span className="text-[9px] font-semibold uppercase tracking-wider text-stone-400">
+                        Vs
                       </span>
-                      <span className="break-words px-1 text-[11px] leading-snug text-stone-800">
-                        {row.valA}
+                      <span className="truncate px-1 font-serif text-[11px] font-medium text-stone-900">
+                        {dishA.name}
                       </span>
-                      <span className="break-words px-1 text-[11px] leading-snug text-stone-800">
-                        {row.valB}
+                      <span className="truncate px-1 font-serif text-[11px] font-medium text-stone-900">
+                        {dishB.name}
                       </span>
                     </div>
-                  ))}
+                    <div className="divide-y divide-stone-100">
+                      {rows.map((row) => (
+                        <div
+                          key={row.label}
+                          className="grid grid-cols-[3.75rem_minmax(0,1fr)_minmax(0,1fr)] gap-0 px-2 py-2.5"
+                        >
+                          <span className="pr-1 text-[10px] font-medium leading-snug text-stone-500">
+                            {row.label.replace(' Profile', '').replace(' Level', '')}
+                          </span>
+                          <span className="break-words px-1 text-[11px] leading-snug text-stone-800">
+                            {row.valA}
+                          </span>
+                          <span className="break-words px-1 text-[11px] leading-snug text-stone-800">
+                            {row.valB}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-stone-200/80 bg-white/95 p-3">
+            <div className="shrink-0 border-t border-stone-200/80 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full cursor-pointer rounded-full bg-stone-950 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 active:scale-[0.98]"
+                className="w-full min-h-11 cursor-pointer rounded-full bg-stone-950 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 active:scale-[0.98]"
               >
                 Done
               </button>

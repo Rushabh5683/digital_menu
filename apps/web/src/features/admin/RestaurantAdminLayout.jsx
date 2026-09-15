@@ -17,6 +17,7 @@ import {
   UserRound,
   UtensilsCrossed,
   X,
+  HeartHandshake,
   ExternalLink,
   Layers3,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import { api } from '../../shared/api/client.js';
 import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
+import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
 
 const adminNav = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -37,17 +39,28 @@ const adminNav = [
       { to: '/admin/reports', label: 'Reports', icon: FileBarChart },
     ],
   },
+  { to: '/admin/staff-appreciation', label: 'Staff appreciation', icon: HeartHandshake },
   { to: '/admin/captains', label: 'Captains', icon: UserRound },
-  { to: '/admin/menu', label: 'Menu', icon: UtensilsCrossed },
-  { to: '/admin/categories', label: 'Categories', icon: Layers3 },
-  { to: '/admin/dishes', label: 'Dishes', icon: Grid2x2 },
+  {
+    id: 'menu',
+    label: 'Menu',
+    icon: UtensilsCrossed,
+    children: [
+      { to: '/admin/menu', label: 'Menus', icon: UtensilsCrossed, end: true },
+      { to: '/admin/categories', label: 'Categories', icon: Layers3 },
+      { to: '/admin/dishes', label: 'Dishes', icon: Grid2x2 },
+    ],
+  },
   { to: '/admin/tables', label: 'Tables', icon: Table2 },
   { to: '/admin/qr-codes', label: 'QR Codes', icon: QrCode },
   { to: '/admin/analytics', label: 'Analytics', icon: ChartColumn },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
-const captainNav = [{ to: '/admin/orders', label: 'Orders', icon: ClipboardList, end: true }];
+const captainNav = [
+  { to: '/admin/orders', label: 'Orders', icon: ClipboardList, end: true },
+  { to: '/admin/staff-appreciation', label: 'Staff appreciation', icon: HeartHandshake },
+];
 
 const linkClass = ({ isActive }) =>
   [
@@ -81,16 +94,13 @@ function NavItem({ item, onNavigate }) {
   }, [item.children, location.pathname]);
 
   const ordersGroupActive =
-    item.id === 'orders' &&
-    (location.pathname === '/admin/orders' ||
-      location.pathname.startsWith('/admin/orders/') ||
-      location.pathname.startsWith('/admin/day-end') ||
-      location.pathname.startsWith('/admin/reports'));
+    item.id === 'orders' && location.pathname.startsWith('/admin/orders/');
 
-  const [open, setOpen] = useState(() => Boolean(ordersGroupActive || childActive));
+  const groupActive = childActive || ordersGroupActive;
+  const [open, setOpen] = useState(() => Boolean(groupActive));
 
   if (item.children) {
-    const expanded = open || ordersGroupActive;
+    const expanded = open || groupActive;
     return (
       <div className="space-y-1">
         <button
@@ -98,7 +108,7 @@ function NavItem({ item, onNavigate }) {
           onClick={() => setOpen((value) => !value)}
           className={[
             'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
-            ordersGroupActive
+            groupActive
               ? 'bg-white/10 text-white'
               : 'text-white/65 hover:bg-white/[0.06] hover:text-white',
           ].join(' ')}
@@ -165,11 +175,13 @@ export function RestaurantAdminLayout() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-[var(--surface)] lg:grid lg:grid-cols-[270px_1fr]">
+    <div
+      className="flex h-dvh flex-col overflow-hidden bg-[var(--surface)] lg:grid lg:grid-cols-[var(--admin-sidebar-width)_1fr]"
+    >
       {mobileOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-[var(--ink)]/40 lg:hidden"
+          className="fixed inset-0 z-40 bg-[var(--ink)]/20 backdrop-blur-[2px] lg:hidden"
           aria-label="Close navigation"
           onClick={() => setMobileOpen(false)}
         />
@@ -177,7 +189,7 @@ export function RestaurantAdminLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[270px] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:h-full lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[var(--admin-sidebar-width)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:h-full lg:max-w-none lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
         style={{
@@ -207,7 +219,7 @@ export function RestaurantAdminLayout() {
                     {restaurant?.name || 'Your restaurant'}
                   </h1>
                   <div className="mt-1">
-                    <StatusBadge status={restaurant?.status || 'PENDING'} />
+                    <SidebarStatusBadge status={restaurant?.status || 'PENDING'} />
                   </div>
                 </div>
               </div>
@@ -249,14 +261,15 @@ export function RestaurantAdminLayout() {
         </div>
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="z-30 shrink-0 border-b border-[var(--line)] bg-[var(--surface-elevated)]/90 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-[var(--line)] bg-white p-2 text-[var(--ink)] lg:hidden"
+                className="rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] lg:hidden"
                 onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
               >
                 <Menu size={16} />
               </button>
@@ -265,14 +278,16 @@ export function RestaurantAdminLayout() {
                   {restaurant?.name || 'Restaurant'}
                 </p>
                 <p className="text-sm font-semibold text-[var(--ink)]">
-                  {isCaptain ? 'Floor orders' : 'Operations & attention'}
+                  {isCaptain ? 'Floor orders' : 'Operations & Intelligence'}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {slug && !isCaptain ? (
                 <Link
-                  to={`/menu/${slug}`}
+                  to={staffMenuPreviewPath(slug)}
+                  target="_blank"
+                  rel="noreferrer"
                   className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-black/[0.02]"
                 >
                   Customer menu
@@ -283,10 +298,26 @@ export function RestaurantAdminLayout() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8 lg:py-8 [-webkit-overflow-scrolling:touch]">
           <Outlet context={{ restaurant }} />
         </main>
       </div>
     </div>
+  );
+}
+
+const SIDEBAR_STATUS_STYLES = {
+  ACTIVE: '!border-emerald-400/45 !bg-emerald-400/20 !text-emerald-200',
+  INACTIVE: '!border-white/25 !bg-white/10 !text-white/75',
+  PENDING: '!border-[var(--accent)]/45 !bg-[var(--accent)]/20 !text-[var(--accent)]',
+};
+
+function SidebarStatusBadge({ status }) {
+  const key = String(status || 'PENDING').toUpperCase();
+  return (
+    <StatusBadge
+      status={status}
+      className={SIDEBAR_STATUS_STYLES[key] || SIDEBAR_STATUS_STYLES.PENDING}
+    />
   );
 }

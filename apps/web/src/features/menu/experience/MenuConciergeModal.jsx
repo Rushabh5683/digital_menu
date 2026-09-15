@@ -315,7 +315,7 @@ export function MenuConciergeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-[var(--g-ink)]/15 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.98, y: 30 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}

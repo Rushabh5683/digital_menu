@@ -20,6 +20,8 @@
   --font-body: "DM Sans", system-ui, sans-serif;
   --header-offset: 0px;
   --nav-offset: 3.5rem;
+  --admin-sidebar-width: 270px;
+  --super-sidebar-width: 260px;
 }
 
 * {

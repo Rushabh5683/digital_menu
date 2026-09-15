@@ -206,6 +206,56 @@ export async function createAdminCategory(restaurantId, menuId, body = {}) {
   return { category: serializeCategory(category) };
 }
 
+/**
+ * Create multiple categories in one request (same menu).
+ * Body: { categories: [{ name, description?, isEnabled? }, ...] }
+ */
+export async function bulkCreateAdminCategories(restaurantId, menuId, body = {}) {
+  await getMenuOwned(menuId, restaurantId);
+
+  const raw = Array.isArray(body.categories) ? body.categories : null;
+  if (!raw || raw.length === 0) {
+    throw new AppError('Add at least one category', 400);
+  }
+  if (raw.length > 50) {
+    throw new AppError('Bulk create is limited to 50 categories at a time', 400);
+  }
+
+  const rows = raw.map((item, index) => {
+    const name = requiredString(item?.name, `Category ${index + 1} name`);
+    return {
+      name,
+      description: optionalString(item?.description, 1000),
+      isEnabled: item?.isEnabled === undefined ? true : parseBoolean(item.isEnabled, true),
+    };
+  });
+
+  const maxOrder = await prisma.category.aggregate({
+    where: { menuId },
+    _max: { displayOrder: true },
+  });
+  let nextOrder = (maxOrder._max.displayOrder || 0) + 1;
+
+  const created = await prisma.$transaction(
+    rows.map((row) => {
+      const order = nextOrder;
+      nextOrder += 1;
+      return prisma.category.create({
+        data: {
+          menuId,
+          name: row.name,
+          description: row.description,
+          isEnabled: row.isEnabled,
+          displayOrder: order,
+        },
+        include: { dishes: true },
+      });
+    }),
+  );
+
+  return { categories: created.map(serializeCategory), count: created.length };
+}
+
 export async function updateAdminCategory(restaurantId, categoryId, body = {}) {
   await getCategoryOwned(categoryId, restaurantId);
   const data = {};
@@ -264,10 +314,7 @@ export async function createAdminDish(restaurantId, categoryId, body = {}) {
   await getCategoryOwned(categoryId, restaurantId);
 
   const name = requiredString(body.name, 'Dish name');
-  const description =
-    body.description == null || String(body.description).trim() === ''
-      ? '—'
-      : requiredString(body.description, 'Description', { min: 1, max: 2000 });
+  const description = requiredString(body.description, 'Description', { min: 1, max: 2000 });
   const price = parsePrice(body.price ?? 0);
   const imageUrl = optionalString(body.imageUrl, 1000);
   const ingredients = parseStringArray(body.ingredients, 'ingredients');
@@ -302,10 +349,7 @@ export async function updateAdminDish(restaurantId, dishId, body = {}) {
 
   if (body.name !== undefined) data.name = requiredString(body.name, 'Dish name');
   if (body.description !== undefined) {
-    data.description =
-      String(body.description).trim() === ''
-        ? '—'
-        : requiredString(body.description, 'Description', { min: 1, max: 2000 });
+    data.description = requiredString(body.description, 'Description', { min: 1, max: 2000 });
   }
   if (body.price !== undefined) data.price = parsePrice(body.price);
   if (body.imageUrl !== undefined) data.imageUrl = optionalString(body.imageUrl, 1000);

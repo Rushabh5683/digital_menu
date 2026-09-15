@@ -16,6 +16,7 @@ import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { Modal } from '../../shared/ui/Modal.jsx';
 import { PrintableQrCard, downloadPrintableCardPng } from './components/PrintableQrCard.jsx';
+import { withStaffMenuPreview } from '../menu/lib/staffPreview.js';
 
 function downloadDataUrl(dataUrl, filename) {
   const link = document.createElement('a');
@@ -186,9 +187,9 @@ export function AdminQrCodesPage() {
   }
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">
             QR codes
           </p>
@@ -238,7 +239,7 @@ export function AdminQrCodesPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="Tables" value={stats?.total ?? 0} />
         <Stat label="QR ready" value={stats?.ready ?? 0} />
         <Stat label="Pending" value={stats?.pending ?? 0} />
@@ -293,7 +294,7 @@ export function AdminQrCodesPage() {
         ) : null}
 
         {tables.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {tables.map((table) => (
               <article
                 key={table.id}
@@ -383,7 +384,7 @@ export function AdminQrCodesPage() {
                   </Button>
                   {table.menuUrl ? (
                     <a
-                      href={table.menuUrl}
+                      href={withStaffMenuPreview(table.menuUrl)}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-[var(--teal)] hover:underline"

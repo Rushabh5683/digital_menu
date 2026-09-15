@@ -1,3 +1,4 @@
+import { ScrollTable } from '../../../shared/ui/ScrollTable.jsx';
 import { formatNumber, formatRate, formatSeconds } from '../lib/format.js';
 
 export function DishAttentionTable({ dishes }) {
@@ -18,7 +19,7 @@ export function DishAttentionTable({ dishes }) {
     .slice(0, 12);
 
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
+    <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
       <div className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">Dishes</p>
         <h2 className="mt-1 text-2xl text-[var(--ink)]" style={{ fontFamily: 'var(--font-display)' }}>
@@ -29,8 +30,8 @@ export function DishAttentionTable({ dishes }) {
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <ScrollTable minWidthClass="min-w-[44rem]">
+        <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
               <th className="py-3 pr-3 font-semibold">Dish</th>
@@ -75,7 +76,7 @@ export function DishAttentionTable({ dishes }) {
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
     </section>
   );
 }

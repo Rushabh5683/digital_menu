@@ -121,9 +121,11 @@ export function AdminOrdersPage() {
   const ordersQuery = useQuery({
     queryKey: ['admin', 'orders', 'floor', debouncedSearch],
     queryFn: async () => {
+      // Floor must include every open ticket — including prior-day unpaid bills.
+      // Filtering by date:today hid guest adds that landed on yesterday's open order.
       const payload = await api.listAdminOrders({
         q: debouncedSearch || undefined,
-        date: 'today',
+        status: 'PLACED,ACCEPTED,PREPARING,READY',
         limit: 200,
       });
       return payload;
@@ -240,14 +242,37 @@ export function AdminOrdersPage() {
   }, [orders, soundOn]);
 
   const statusMutation = useMutation({
-    mutationFn: ({ orderId, status, paymentMethod, paymentNote }) =>
-      api.updateAdminOrderStatus(orderId, status, { paymentMethod, paymentNote }),
+    mutationFn: ({
+      orderId,
+      status,
+      paymentMethod,
+      paymentNote,
+      paymentSplits,
+      staffAppreciationAmount,
+      appreciationCaptainIds,
+    }) =>
+      api.updateAdminOrderStatus(orderId, status, {
+        paymentMethod,
+        paymentNote,
+        paymentSplits,
+        staffAppreciationAmount,
+        appreciationCaptainIds,
+        businessDate: (() => {
+          try {
+            return sessionStorage.getItem('dm_day_end_edit_date') || undefined;
+          } catch {
+            return undefined;
+          }
+        })(),
+      }),
     onMutate: () => setActionError(null),
     onError: (err) => setActionError(err.message || 'Could not update order'),
     onSuccess: () => setCompleteTarget(null),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'staff-appreciation'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] });
     },
   });
 
@@ -257,16 +282,29 @@ export function AdminOrdersPage() {
     onError: (err) => setActionError(err.message || 'Could not mark bill printed'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] });
     },
   });
 
   const startOrderMutation = useMutation({
-    mutationFn: (table) =>
-      api.startAdminTableOrder({ tableId: table.id, tableNumber: table.tableNumber }),
+    mutationFn: (table) => {
+      let businessDate;
+      try {
+        businessDate = sessionStorage.getItem('dm_day_end_edit_date') || undefined;
+      } catch {
+        businessDate = undefined;
+      }
+      return api.startAdminTableOrder({
+        tableId: table.id,
+        tableNumber: table.tableNumber,
+        businessDate,
+      });
+    },
     onMutate: () => setActionError(null),
     onError: (err) => setActionError(err.message || 'Could not open table order'),
     onSuccess: (payload) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'day-end'] });
       if (payload?.order?.id) {
         navigate(`/admin/orders/${payload.order.id}`);
       }
@@ -302,8 +340,37 @@ export function AdminOrdersPage() {
   const billedCount = floorTiles.filter((tile) => tableFloorState(tile.order) === 'billed').length;
   void nowTick;
 
+  let dayEndEditDate = null;
+  try {
+    dayEndEditDate = sessionStorage.getItem('dm_day_end_edit_date');
+  } catch {
+    dayEndEditDate = null;
+  }
+
   return (
     <div className="ops-board -mx-1 space-y-5 menu-fade-up sm:-mx-0">
+      {dayEndEditDate ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p>
+            <span className="font-semibold">Adding / correcting bills for {dayEndEditDate}.</span>{' '}
+            Settled tickets will be saved on that date (not today).
+          </p>
+          <button
+            type="button"
+            className="text-xs font-semibold underline underline-offset-2"
+            onClick={() => {
+              try {
+                sessionStorage.removeItem('dm_day_end_edit_date');
+              } catch {
+                // ignore
+              }
+              window.location.reload();
+            }}
+          >
+            Exit date edit
+          </button>
+        </div>
+      ) : null}
       <header className="relative overflow-hidden rounded-[1.5rem] border border-[var(--line)] bg-[var(--ink)] px-5 py-5 text-white shadow-[0_24px_50px_-32px_rgba(15,31,28,0.65)] sm:px-7 sm:py-6">
         <div
           className="pointer-events-none absolute inset-0 opacity-90"
@@ -382,7 +449,7 @@ export function AdminOrdersPage() {
       </header>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-[var(--line)] bg-white/90 p-3 shadow-[0_16px_40px_-30px_rgba(15,31,28,0.4)] sm:flex-row sm:items-center sm:p-4">
-        <label className="relative min-w-[12rem] flex-1">
+        <label className="relative min-w-0 w-full flex-1 sm:min-w-[12rem]">
           <Search
             size={15}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
@@ -440,7 +507,7 @@ export function AdminOrdersPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {floorTiles.map(({ table, order, openTicket }) => {
             const flashing =
               flashTableKeys.has(table.id) || flashTableKeys.has(`n-${table.tableNumber}`);
@@ -485,14 +552,14 @@ export function AdminOrdersPage() {
             : ''
         }
         totalLabel={completeTarget ? formatMoney(completeTarget.total) : ''}
+        orderTotal={completeTarget ? Number(completeTarget.total || 0) : 0}
         busy={statusMutation.isPending}
         onCancel={() => setCompleteTarget(null)}
-        onConfirm={({ paymentMethod, paymentNote }) =>
+        onConfirm={(payment) =>
           statusMutation.mutate({
             orderId: completeTarget.id,
             status: 'COMPLETED',
-            paymentMethod,
-            paymentNote,
+            ...payment,
           })
         }
       />
@@ -566,7 +633,7 @@ function TableFloorTile({
   return (
     <article
       className={[
-        'relative flex min-h-[11.5rem] flex-col overflow-hidden rounded-2xl border p-3.5 shadow-[0_12px_28px_-22px_rgba(15,31,28,0.45)] transition',
+        'relative flex min-h-[11.5rem] min-w-0 flex-col overflow-hidden rounded-2xl border p-3.5 shadow-[0_12px_28px_-22px_rgba(15,31,28,0.45)] transition',
         shell,
         flashing ? 'ops-card-flash' : '',
         opening ? 'opacity-70' : '',
@@ -574,10 +641,10 @@ function TableFloorTile({
     >
       {topBar ? <div className={`absolute inset-x-0 top-0 h-1 ${topBar}`} /> : null}
 
-      <div className="flex items-start justify-between gap-2">
-        <div>
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
           <p
-            className="text-2xl tracking-tight text-[var(--ink)]"
+            className="truncate text-2xl tracking-tight text-[var(--ink)]"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             {label}
@@ -589,14 +656,14 @@ function TableFloorTile({
         {order ? (
           <span
             className={[
-              'rounded-full px-2 py-0.5 text-[10px] font-bold text-white',
+              'max-w-[45%] shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white',
               state === 'billed' ? 'bg-[var(--teal)]' : 'bg-[var(--ink)]',
             ].join(' ')}
           >
             #{displayNo}
           </span>
         ) : (
-          <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+          <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
             Idle
           </span>
         )}
@@ -607,15 +674,15 @@ function TableFloorTile({
           <button
             type="button"
             onClick={onOpen}
-            className="mt-3 flex-1 space-y-1 text-left"
+            className="mt-3 min-w-0 flex-1 space-y-1 text-left"
           >
-            <p className="text-sm font-semibold text-[var(--ink)]">
+            <p className="truncate text-sm font-semibold text-[var(--ink)]">
               {itemCount} item{itemCount === 1 ? '' : 's'} · {formatMoney(order.total)}
             </p>
-            <p className="text-[11px] text-[var(--muted)]">
+            <p className="truncate text-[11px] text-[var(--muted)]">
               {formatClock(order.createdAt)} · {formatRelative(order.createdAt)}
             </p>
-            <ul className="mt-1 space-y-0.5">
+            <ul className="mt-1 min-w-0 space-y-0.5">
               {(order.items || []).slice(0, 2).map((item) => (
                 <li key={item.id} className="truncate text-[11px] text-[var(--ink-soft,#5c564c)]">
                   {item.dishNameSnapshot} × {item.quantity}
@@ -632,50 +699,60 @@ function TableFloorTile({
             </ul>
           </button>
 
-          <div className={['mt-3 grid gap-2', canSettle ? 'grid-cols-2' : 'grid-cols-1'].join(' ')}>
-            <button
-              type="button"
-              onClick={onOpen}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ink)] hover:bg-[var(--surface)]"
-            >
-              <Eye size={14} />
-              Open
-            </button>
+          <div className="mt-3 flex min-w-0 flex-col gap-2">
+            <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+              <button
+                type="button"
+                onClick={onOpen}
+                className="inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-[var(--line)] bg-white px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink)] hover:bg-[var(--surface)]"
+              >
+                <Eye size={14} className="shrink-0" />
+                <span className="truncate">Open</span>
+              </button>
+              {canSettle ? (
+                <button
+                  type="button"
+                  disabled={printing || itemCount === 0}
+                  onClick={onPrint}
+                  className={[
+                    'inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl border px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.06em] disabled:opacity-60',
+                    state === 'billed'
+                      ? 'border-[var(--teal)]/40 bg-[var(--teal)]/15 text-[var(--teal)] hover:bg-[var(--teal)]/25'
+                      : 'border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-deep)] hover:bg-[var(--accent)]/25',
+                  ].join(' ')}
+                >
+                  {printing ? (
+                    <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                  ) : (
+                    <Printer size={14} className="shrink-0" />
+                  )}
+                  <span className="truncate">Print</span>
+                </button>
+              ) : null}
+            </div>
             {canSettle ? (
               <button
                 type="button"
-                disabled={printing || itemCount === 0}
-                onClick={onPrint}
-                className={[
-                  'inline-flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-60',
-                  state === 'billed'
-                    ? 'border-[var(--teal)]/40 bg-[var(--teal)]/15 text-[var(--teal)] hover:bg-[var(--teal)]/25'
-                    : 'border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-deep)] hover:bg-[var(--accent)]/25',
-                ].join(' ')}
+                disabled={completing || itemCount === 0}
+                onClick={onComplete}
+                className="inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-[var(--ink)] px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-black disabled:opacity-60"
               >
-                {printing ? <LoaderCircle size={14} className="animate-spin" /> : <Printer size={14} />}
-                Print
+                {completing ? (
+                  <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                ) : (
+                  <Check size={14} className="shrink-0" />
+                )}
+                <span className="truncate">Complete</span>
               </button>
             ) : null}
           </div>
-          {canSettle ? (
-            <button
-              type="button"
-              disabled={completing || itemCount === 0}
-              onClick={onComplete}
-              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--ink)] px-2 py-2 text-[11px] font-bold uppercase tracking-[0.1em] text-white hover:bg-black disabled:opacity-60"
-            >
-              {completing ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}
-              Complete
-            </button>
-          ) : null}
         </>
       ) : (
         <button
           type="button"
           disabled={opening}
           onClick={onOpen}
-          className="mt-4 flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-2 py-4 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60"
+          className="mt-4 flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-2 py-4 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60"
         >
           {opening ? (
             <LoaderCircle size={18} className="animate-spin text-[var(--muted)]" />
@@ -694,7 +771,7 @@ function TableFloorTile({
 
 function FloorSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {Array.from({ length: 8 }).map((_, index) => (
         <div
           key={index}

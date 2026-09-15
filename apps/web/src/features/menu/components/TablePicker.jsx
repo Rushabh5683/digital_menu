@@ -12,14 +12,14 @@ export function TablePicker({ restaurant, restaurantSlug, onSelect }) {
   });
 
   return (
-    <div className="min-h-screen bg-[var(--surface)] px-4 py-10">
-      <div className="mx-auto max-w-lg">
-        <div className="overflow-hidden rounded-[28px] border border-[var(--line)] bg-[var(--ink)] p-6 text-white shadow-[0_30px_60px_-40px_rgba(15,31,28,0.7)]">
+    <div className="min-h-screen min-w-0 bg-[var(--surface)] px-4 py-10 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+      <div className="mx-auto w-full min-w-0 max-w-lg">
+        <div className="overflow-hidden rounded-[28px] border border-[var(--line)] bg-[var(--ink)] p-5 text-white shadow-[0_30px_60px_-40px_rgba(15,31,28,0.7)] sm:p-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent)]">
             Welcome
           </p>
           <h1
-            className="mt-2 text-3xl tracking-tight"
+            className="mt-2 break-words text-3xl tracking-tight"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             {restaurant?.name || 'Restaurant'}
@@ -49,13 +49,13 @@ export function TablePicker({ restaurant, restaurantSlug, onSelect }) {
             </p>
           ) : null}
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {(tablesQuery.data || []).map((table) => (
               <button
                 key={table.id}
                 type="button"
                 onClick={() => onSelect(table)}
-                className="rounded-2xl border border-[var(--line)] bg-[var(--surface-elevated)] px-2 py-4 text-center transition hover:border-[var(--teal)] hover:bg-white"
+                className="min-h-16 rounded-2xl border border-[var(--line)] bg-[var(--surface-elevated)] px-2 py-4 text-center transition hover:border-[var(--teal)] hover:bg-white"
               >
                 <span
                   className="block text-xl text-[var(--ink)]"

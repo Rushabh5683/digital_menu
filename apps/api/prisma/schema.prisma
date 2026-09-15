@@ -36,6 +36,7 @@ enum PaymentMethod {
   UPI_PHONEPE
   UPI_OTHER
   OTHER
+  PART
 }
 
 model User {
@@ -51,9 +52,30 @@ model User {
 
   restaurant Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   dayEndCloses DayEndClose[]
+  dayEndReopens DayEndReopenLog[] @relation("DayEndReopens")
+  appreciationShares OrderAppreciationShare[]
+  refreshTokens RefreshToken[]
 
   @@index([restaurantId])
   @@index([role])
+}
+
+/// Long-lived refresh session (hashed). Rotated on each /auth/refresh.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedById String?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Restaurant {
@@ -87,6 +109,7 @@ model Restaurant {
   orders          Order[]
   tables          DiningTable[]
   dayEndCloses    DayEndClose[]
+  dayEndReopens   DayEndReopenLog[]
 
   @@index([status])
   @@index([createdAt])
@@ -124,6 +147,9 @@ model DayEndClose {
   note           String?
   /// Snapshot of sales summary at close time
   summaryJson    Json
+  /// Temporary edit window after admin password unlock. Null = fully locked.
+  unlockedUntil  DateTime?
+  unlockedByUserId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -132,6 +158,22 @@ model DayEndClose {
 
   @@unique([restaurantId, businessDate])
   @@index([restaurantId, closedAt])
+}
+
+/// Audit when a closed day is unlocked (password) for corrections.
+model DayEndReopenLog {
+  id               String   @id @default(cuid())
+  restaurantId     String
+  businessDate     String
+  reopenedByUserId String?
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reopenedBy User?      @relation("DayEndReopens", fields: [reopenedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, businessDate])
+  @@index([createdAt])
 }
 
 model Order {
@@ -154,6 +196,10 @@ model Order {
   billPrintedAt  DateTime?
   paymentMethod  PaymentMethod?
   paymentNote    String?
+  /// When paymentMethod=PART: [{ method, amount, note? }]
+  paymentSplits  Json?
+  /// Optional guest staff appreciation (not part of bill total)
+  staffAppreciationAmount Decimal @default(0) @db.Decimal(10, 2)
   paidAt         DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -162,6 +208,7 @@ model Order {
   table      DiningTable  @relation(fields: [tableId], references: [id], onDelete: Restrict)
   session    Session?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   items      OrderItem[]
+  appreciationShares OrderAppreciationShare[]
 
   @@index([restaurantId, createdAt])
   @@index([restaurantId, status])
@@ -170,6 +217,22 @@ model Order {
   @@index([sessionId])
   @@index([orderNumber])
   @@index([restaurantId, paymentMethod])
+}
+
+/// Per-captain share of staff appreciation collected on a settled bill.
+model OrderAppreciationShare {
+  id            String   @id @default(cuid())
+  orderId       String
+  captainUserId String
+  amount        Decimal  @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  captain User  @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([captainUserId, createdAt])
+  @@unique([orderId, captainUserId])
 }
 
 model OrderItem {

@@ -9,18 +9,18 @@ const linkClass = ({ isActive }) =>
 
 export function AppLayout() {
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-6 sm:px-6">
-      <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-black/10 pb-4">
-        <div>
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-5xl flex-col px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">
+      <header className="mb-10 flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-4 sm:gap-4">
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">Digital Menu</p>
           <h1
-            className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl"
+            className="mt-1 break-words text-2xl font-semibold tracking-tight sm:text-3xl"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             Attention Intelligence
           </h1>
         </div>
-        <nav className="flex items-center gap-1">
+        <nav className="flex min-w-0 flex-wrap items-center gap-1">
           <NavLink to="/" className={linkClass} end>
             <LayoutGrid size={16} />
             Home
@@ -32,7 +32,7 @@ export function AppLayout() {
         </nav>
       </header>
 
-      <main className="flex-1">
+      <main className="min-w-0 flex-1">
         <Outlet />
       </main>
 

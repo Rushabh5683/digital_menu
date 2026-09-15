@@ -74,7 +74,7 @@ function LoginForm() {
       : null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[var(--ink)] text-[var(--surface-elevated)]">
+    <div className="relative min-h-screen min-w-0 bg-[var(--ink)] text-[var(--surface-elevated)]">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -83,7 +83,7 @@ function LoginForm() {
         }}
       />
 
-      <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-4 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
+      <div className="relative mx-auto grid min-h-screen w-full min-w-0 max-w-6xl items-center gap-10 px-4 py-10 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
         <section className="menu-fade-up hidden lg:block">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--accent)]">
             Digital Menu
@@ -92,20 +92,17 @@ function LoginForm() {
             className="mt-5 max-w-xl text-5xl leading-[1.05] tracking-tight"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            Attention intelligence for modern dining rooms.
+            Guest Intelligence For Modern Restaurants
           </h1>
           <p className="mt-5 max-w-md text-base leading-relaxed text-white/70">
             Sign in to manage restaurants, menus, and live customer attention insights — secured
             with role-based access for platform and restaurant teams.
           </p>
-          <div className="mt-10 flex items-center gap-3 text-sm text-white/55">
-            <span className="h-px w-8 bg-[var(--accent)]" />
-            Staff console · HTTP-only session · No customer accounts
-          </div>
+          
         </section>
 
-        <section className="menu-fade-up mx-auto w-full max-w-md">
-          <div className="rounded-[1.75rem] border border-white/10 bg-[var(--surface-elevated)] p-6 text-[var(--ink)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.7)] sm:p-8">
+        <section className="menu-fade-up mx-auto w-full min-w-0 max-w-md">
+          <div className="w-full min-w-0 rounded-[1.75rem] border border-white/10 bg-[var(--surface-elevated)] p-5 text-[var(--ink)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.7)] sm:p-8">
             <div className="mb-8">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--teal)]">
                 Staff sign in
@@ -121,16 +118,16 @@ function LoginForm() {
               </p>
             </div>
 
-            <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+            <form className="w-full min-w-0 space-y-5" onSubmit={handleSubmit} noValidate>
               {bannerMessage ? <Alert tone="error">{bannerMessage}</Alert> : null}
 
-              <label className="block space-y-2">
+              <label className="block min-w-0 space-y-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                   Email
                 </span>
                 <div
                   className={[
-                    'flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 transition',
+                    'flex min-w-0 items-center gap-3 rounded-2xl border bg-white px-3 py-3 transition sm:px-4',
                     emailErr
                       ? 'border-red-300 ring-2 ring-red-100'
                       : 'border-[var(--line)] focus-within:border-[var(--teal)] focus-within:ring-2 focus-within:ring-[var(--teal)]/15',
@@ -143,7 +140,7 @@ function LoginForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-                    className="w-full border-0 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]/70"
+                    className="min-w-0 w-full border-0 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]/70"
                     placeholder="you@restaurant.com"
                     disabled={submitting}
                   />
@@ -151,13 +148,13 @@ function LoginForm() {
                 {emailErr ? <p className="text-xs text-[var(--danger)]">{emailErr}</p> : null}
               </label>
 
-              <label className="block space-y-2">
+              <label className="block min-w-0 space-y-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
                   Password
                 </span>
                 <div
                   className={[
-                    'flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 transition',
+                    'flex min-w-0 items-center gap-3 rounded-2xl border bg-white px-3 py-3 transition sm:px-4',
                     passwordErr
                       ? 'border-red-300 ring-2 ring-red-100'
                       : 'border-[var(--line)] focus-within:border-[var(--teal)] focus-within:ring-2 focus-within:ring-[var(--teal)]/15',
@@ -170,14 +167,14 @@ function LoginForm() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-                    className="w-full border-0 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]/70"
+                    className="min-w-0 w-full border-0 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]/70"
                     placeholder="••••••••"
                     disabled={submitting}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="rounded-lg p-1 text-[var(--muted)] hover:bg-black/5 hover:text-[var(--ink)]"
+                    className="shrink-0 rounded-lg p-1 text-[var(--muted)] hover:bg-black/5 hover:text-[var(--ink)]"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -201,7 +198,7 @@ function LoginForm() {
               </Button>
             </form>
 
-            <p className="mt-6 text-center text-xs text-[var(--muted)]">
+            <p className="mt-6 break-words text-center text-xs text-[var(--muted)]">
               Guests do not need an account.{' '}
               <Link to="/menu/saffron-court" className="font-semibold text-[var(--teal)] hover:underline">
                 Open customer menu

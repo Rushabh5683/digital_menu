@@ -2,12 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
+import { env } from '../config.js';
 import { AppError } from './errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const UPLOADS_ROOT = path.resolve(__dirname, '../../uploads');
+export const UPLOADS_ROOT = env.uploadsDir
+  ? path.resolve(env.uploadsDir)
+  : path.resolve(__dirname, '../../uploads');
 export const LOGO_UPLOAD_DIR = path.join(UPLOADS_ROOT, 'logos');
 export const DISH_UPLOAD_DIR = path.join(UPLOADS_ROOT, 'dishes');
+
+/** Turn /uploads/... into an absolute URL when PUBLIC_API_URL is set (split-host deploy). */
+export function toPublicUploadUrl(relativePath) {
+  const rel = String(relativePath || '').trim();
+  if (!rel) return rel;
+  if (/^https?:\/\//i.test(rel)) return rel;
+  const base = env.publicApiUrl;
+  if (!base) return rel.startsWith('/') ? rel : `/${rel}`;
+  const pathPart = rel.startsWith('/') ? rel : `/${rel}`;
+  return `${base}${pathPart}`;
+}
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);

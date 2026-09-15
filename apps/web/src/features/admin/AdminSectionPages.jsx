@@ -7,3 +7,4 @@ export { AdminOrdersPage } from './AdminOrdersPage.jsx';
 export { AdminReportsPage } from './AdminReportsPage.jsx';
 export { AdminDayEndPage } from './AdminDayEndPage.jsx';
 export { AdminSettingsPage } from './AdminSettingsPage.jsx';
+export { AdminStaffAppreciationPage } from './AdminStaffAppreciationPage.jsx';

@@ -10,10 +10,13 @@ export function CategoryDishRail({
   dishes = [],
   shortlistIds,
   comparisonPair,
+  quantities = {},
   onOpenDetail,
   onToggleShortlist,
   onToggleCompare,
   onAddToOrder,
+  onIncrement,
+  onDecrement,
   currency = 'INR',
 }) {
   const sectionAttentionRef = useCategoryAttention(category?.id);
@@ -132,10 +135,13 @@ export function CategoryDishRail({
                 dish={dish}
                 isShortlisted={shortlistIds?.has(dish.id)}
                 isCompared={comparedIds.has(dish.id)}
+                quantity={quantities[dish.id] || 0}
                 onOpenDetail={onOpenDetail}
                 onToggleShortlist={onToggleShortlist}
                 onToggleCompare={onToggleCompare}
                 onAddToOrder={onAddToOrder}
+                onIncrement={onIncrement}
+                onDecrement={onDecrement}
                 currency={currency}
                 showSteam={steamForCategory && dish.availability !== false}
               />

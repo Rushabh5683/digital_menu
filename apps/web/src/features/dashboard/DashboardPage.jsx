@@ -19,6 +19,7 @@ import { OverviewCards } from './components/OverviewCards.jsx';
 import { SearchDemandSection } from './components/SearchDemandSection.jsx';
 import { SectionAttentionTable } from './components/SectionAttentionTable.jsx';
 import { useDashboardData } from './hooks/useDashboardData.js';
+import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
 
 export function DashboardPage({ restaurantSlugOverride, embedded = false } = {}) {
   const { restaurantSlug: routeSlug } = useParams();
@@ -40,7 +41,7 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
   } = useDashboardData(restaurantSlug, rangePreset);
 
   return (
-    <div className={embedded ? '' : 'min-h-screen bg-[var(--surface)]'}>
+    <div className={embedded ? 'min-w-0' : 'min-h-screen min-w-0 bg-[var(--surface)]'}>
       <div
         className="border-b border-[var(--line)] bg-[var(--ink)] text-[var(--surface-elevated)]"
         style={{
@@ -48,8 +49,8 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
             'radial-gradient(circle at 15% 20%, rgba(201,162,39,0.22), transparent 35%), radial-gradient(circle at 90% 0%, rgba(244,246,242,0.08), transparent 40%)',
         }}
       >
-        <div className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 py-8 sm:px-6 lg:px-8">
-          <div>
+        <div className="mx-auto flex max-w-7xl min-w-0 flex-wrap items-end justify-between gap-4 px-4 py-8 sm:px-6 lg:px-8">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">
               Guest signals
             </p>
@@ -68,7 +69,9 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
           <div className="flex flex-wrap items-center gap-2">
             {restaurantSlug ? (
               <Link
-                to={`/menu/${restaurantSlug}`}
+                to={staffMenuPreviewPath(restaurantSlug)}
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10"
               >
                 Open menu
@@ -87,9 +90,9 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+      <div className="mx-auto max-w-7xl min-w-0 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--ink)]">What needs attention</p>
             <p className="text-sm text-[var(--muted)]">{range.label}</p>
           </div>
@@ -113,16 +116,16 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
               searchDemandReport={overview.searchDemandReport}
               filterDemand={overview.filterDemand}
             />
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid min-w-0 gap-6 xl:grid-cols-2">
               <InformationDemandSection informationMetrics={overview.informationMetrics} />
               <GuestJourneySection guestJourneyReport={overview.guestJourneyReport} />
             </div>
             <AttentionChart categories={categories} />
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid min-w-0 gap-6 xl:grid-cols-2">
               <SectionAttentionTable categories={categories} />
               <DishAttentionTable dishes={dishes} />
             </div>
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid min-w-0 gap-6 xl:grid-cols-2">
               <ComparisonSection comparisonReport={overview.comparisonReport} />
               <HighAttentionLowSelection dishes={highAttentionLowSelection} />
             </div>

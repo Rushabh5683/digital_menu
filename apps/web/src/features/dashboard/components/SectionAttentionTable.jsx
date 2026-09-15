@@ -1,10 +1,11 @@
+import { ScrollTable } from '../../../shared/ui/ScrollTable.jsx';
 import { formatNumber, formatPercent, formatSeconds } from '../lib/format.js';
 
 export function SectionAttentionTable({ categories }) {
   const rows = [...categories].sort((a, b) => b.averageAttentionSeconds - a.averageAttentionSeconds);
 
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
+    <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.45)] sm:p-6">
       <div className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--teal)]">Sections</p>
         <h2 className="mt-1 text-2xl text-[var(--ink)]" style={{ fontFamily: 'var(--font-display)' }}>
@@ -12,8 +13,8 @@ export function SectionAttentionTable({ categories }) {
         </h2>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <ScrollTable minWidthClass="min-w-[36rem]">
+        <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
               <th className="py-3 pr-4 font-semibold">Section</th>
@@ -47,7 +48,7 @@ export function SectionAttentionTable({ categories }) {
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
     </section>
   );
 }

@@ -60,6 +60,44 @@ export async function requireAuth(req, res, next) {
 }
 
 /**
+ * Soft auth: attach req.auth when a valid cookie/token is present; otherwise continue.
+ * Never fails the request for missing/invalid credentials.
+ */
+export async function optionalAuth(req, res, next) {
+  try {
+    const token = readTokenFromRequest(req);
+    if (!token) {
+      req.auth = null;
+      return next();
+    }
+
+    const payload = verifyAuthToken(token);
+    const userId = payload.sub;
+    if (!userId || typeof userId !== 'string') {
+      req.auth = null;
+      return next();
+    }
+
+    const user = await findUserRecordById(userId);
+    if (!user || !user.isActive) {
+      req.auth = null;
+      return next();
+    }
+
+    req.auth = {
+      userId: user.id,
+      role: user.role,
+      restaurantId: user.restaurantId ?? null,
+      user: serializeAuthUser(user),
+    };
+    return next();
+  } catch {
+    req.auth = null;
+    return next();
+  }
+}
+
+/**
  * Requires the authenticated user to have one of the listed roles.
  * Must run after requireAuth.
  */

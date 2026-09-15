@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   Banknote,
   CalendarRange,
   ChartColumn,
   CircleDollarSign,
+  HeartHandshake,
   LoaderCircle,
   Receipt,
   ShoppingBag,
@@ -14,6 +16,7 @@ import {
 import { api } from '../../shared/api/client.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
+import { ScrollTable } from '../../shared/ui/ScrollTable.jsx';
 
 const PRESETS = [
   { id: 'today', label: 'Today' },
@@ -59,14 +62,32 @@ function toInputDate(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+const REPORT_TABS = new Set([
+  'summary',
+  'payments',
+  'items',
+  'days',
+  'bills',
+  'appreciation',
+]);
+
 /**
  * PetPooja-style sales reports for restaurant admin.
  */
 export function AdminReportsPage() {
-  const [preset, setPreset] = useState('today');
-  const [fromDate, setFromDate] = useState(() => toInputDate());
-  const [toDate, setToDate] = useState(() => toInputDate());
-  const [tab, setTab] = useState('summary'); // summary | payments | items | days | bills
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = REPORT_TABS.has(searchParams.get('tab'))
+    ? searchParams.get('tab')
+    : 'summary';
+  const initialPreset = searchParams.get('preset') || 'today';
+  const [preset, setPreset] = useState(
+    ['today', 'yesterday', '7d', '30d', 'custom'].includes(initialPreset)
+      ? initialPreset
+      : 'today',
+  );
+  const [fromDate, setFromDate] = useState(() => searchParams.get('from') || toInputDate());
+  const [toDate, setToDate] = useState(() => searchParams.get('to') || toInputDate());
+  const [tab, setTab] = useState(initialTab); // summary | payments | items | days | bills
   const [selectedBillId, setSelectedBillId] = useState(null);
 
   const queryParams = useMemo(() => {
@@ -75,6 +96,14 @@ export function AdminReportsPage() {
     }
     return { preset };
   }, [preset, fromDate, toDate]);
+
+  const selectTab = (nextTab) => {
+    setTab(nextTab);
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === 'summary') next.delete('tab');
+    else next.set('tab', nextTab);
+    setSearchParams(next, { replace: true });
+  };
 
   const reportQuery = useQuery({
     queryKey: ['admin', 'reports', 'sales', queryParams],
@@ -102,8 +131,7 @@ export function AdminReportsPage() {
             Sales reports
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Settled bills only (completed orders). Filter by date — same idea as PetPooja day / item /
-            payment reports.
+            Settled bills only (completed orders). Filter by date
           </p>
         </div>
         {report?.range ? (
@@ -137,8 +165,8 @@ export function AdminReportsPage() {
         </div>
 
         {preset === 'custom' ? (
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <label className="text-sm">
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="w-full text-sm sm:w-auto">
               <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
                 From
               </span>
@@ -147,10 +175,10 @@ export function AdminReportsPage() {
                 value={fromDate}
                 max={toDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2 sm:w-auto"
               />
             </label>
-            <label className="text-sm">
+            <label className="w-full text-sm sm:w-auto">
               <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
                 To
               </span>
@@ -159,7 +187,7 @@ export function AdminReportsPage() {
                 value={toDate}
                 min={fromDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2 sm:w-auto"
               />
             </label>
           </div>
@@ -186,7 +214,7 @@ export function AdminReportsPage() {
 
       {summary ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <KpiCard
               icon={CircleDollarSign}
               label="Gross sales"
@@ -215,6 +243,18 @@ export function AdminReportsPage() {
                   : 'GST off or no tax in range'
               }
             />
+            <KpiCard
+              icon={HeartHandshake}
+              label="Staff appreciation"
+              value={formatMoney(summary.staffAppreciationTotal || 0)}
+              hint={
+                (summary.staffAppreciationCount || 0) > 0
+                  ? `${summary.staffAppreciationCount} share${
+                      summary.staffAppreciationCount === 1 ? '' : 's'
+                    } · not in sales`
+                  : 'Not part of bill total'
+              }
+            />
           </div>
 
           <div className="flex flex-wrap gap-2 border-b border-[var(--line)] pb-1">
@@ -224,13 +264,14 @@ export function AdminReportsPage() {
               { id: 'items', label: 'Item-wise', icon: Utensils },
               { id: 'days', label: 'Day-wise', icon: CalendarRange },
               { id: 'bills', label: 'Bills', icon: Receipt },
+              { id: 'appreciation', label: 'Staff appreciation', icon: HeartHandshake },
             ].map(({ id, label, icon: Icon }) => {
               const active = tab === id;
               return (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setTab(id)}
+                  onClick={() => selectTab(id)}
                   className={[
                     'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition',
                     active
@@ -259,6 +300,12 @@ export function AdminReportsPage() {
             <BillsPanel
               orders={report.bills || report.recentOrders || []}
               onSelect={(order) => setSelectedBillId(order.id)}
+            />
+          ) : null}
+          {tab === 'appreciation' ? (
+            <StaffAppreciationPanel
+              appreciation={report.staffAppreciation}
+              rangeLabel={report.range?.label}
             />
           ) : null}
         </>
@@ -303,14 +350,18 @@ function SummaryPanel({ report }) {
     { label: 'Tax total', value: formatMoney(s.taxAmount) },
     { label: 'Round off', value: formatMoney(s.roundOffAmount) },
     { label: 'Gross sales', value: formatMoney(s.grossSales), strong: true },
+    {
+      label: 'Staff appreciation',
+      value: formatMoney(s.staffAppreciationTotal || 0),
+    },
     { label: 'Bills settled', value: String(s.orderCount) },
     { label: 'Units sold', value: String(s.unitsSold) },
     { label: 'Average ticket', value: formatMoney(s.averageTicket) },
   ];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+      <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
         <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
           Sales breakup
         </h3>
@@ -337,7 +388,7 @@ function SummaryPanel({ report }) {
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
+      <section className="min-w-0 rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
         <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
           Top payments
         </h3>
@@ -346,10 +397,10 @@ function SummaryPanel({ report }) {
         ) : (
           <ul className="mt-3 space-y-2">
             {report.payments.slice(0, 6).map((pay) => (
-              <li key={pay.method}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-[var(--ink)]">{pay.label}</span>
-                  <span className="font-bold text-[var(--teal)]">{formatMoney(pay.amount)}</span>
+              <li key={pay.method} className="min-w-0">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate font-semibold text-[var(--ink)]">{pay.label}</span>
+                  <span className="shrink-0 font-bold text-[var(--teal)]">{formatMoney(pay.amount)}</span>
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--surface)]">
                   <div
@@ -363,6 +414,79 @@ function SummaryPanel({ report }) {
               </li>
             ))}
           </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function StaffAppreciationPanel({ appreciation, rangeLabel }) {
+  const total = appreciation?.total || 0;
+  const entries = appreciation?.entries || [];
+  const count = appreciation?.count || 0;
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+              Staff appreciation
+            </h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {rangeLabel || 'Selected range'} · not included in gross sales
+            </p>
+          </div>
+          <p
+            className="text-2xl font-bold text-[var(--teal)]"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            {formatMoney(total)}
+          </p>
+        </div>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          {count} share{count === 1 ? '' : 's'} assigned to captains
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-[var(--line)] bg-white p-4 sm:p-5">
+        <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+          Collections
+        </h3>
+        {entries.length === 0 ? (
+          <EmptyBlock text="No staff appreciation entries in this range." />
+        ) : (
+          <ScrollTable minWidthClass="min-w-[28rem]" className="mt-3">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
+                  <th className="pb-2 font-semibold">Captain</th>
+                  <th className="pb-2 font-semibold">Bill</th>
+                  <th className="pb-2 font-semibold">Paid by</th>
+                  <th className="pb-2 font-semibold">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((row) => (
+                  <tr key={row.id} className="border-b border-[var(--line)]/70 last:border-0">
+                    <td className="py-2.5 pr-3 font-medium text-[var(--ink)]">{row.captainName}</td>
+                    <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
+                      #{String(row.orderNumber || '').split('-').pop() || '—'}
+                      {row.tableLabel ? ` · ${row.tableLabel}` : ''}
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <span className="inline-flex rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 text-xs font-semibold text-[var(--ink)]">
+                        {row.paymentLabel || '—'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 font-semibold text-[var(--ink)]">
+                      {formatMoney(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
     </div>
@@ -419,8 +543,8 @@ function BillsPanel({ orders, onSelect }) {
   if (!orders.length) return <EmptyBlock text="No settled bills in this range." />;
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <ScrollTable minWidthClass="min-w-[32rem]">
+        <table className="w-full text-left text-sm">
           <thead className="bg-[var(--surface)]/80 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
             <tr>
               {['Bill', 'Table', 'Items', 'Payment', 'Total'].map((h) => (
@@ -465,7 +589,7 @@ function BillsPanel({ orders, onSelect }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
       <p className="border-t border-[var(--line)] px-4 py-2 text-[11px] text-[var(--muted)]">
         Click a bill to view items
       </p>
@@ -504,19 +628,19 @@ function ReportBillDrawer({ orderId, onClose }) {
     >
       <button
         type="button"
-        className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm"
+        className="absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
-          <div>
+      <div className="relative z-10 flex max-h-[min(92vh,100dvh)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4 sm:px-5">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               {orderQuery.isLoading ? 'Loading…' : table}
             </p>
             <h2
               id="report-bill-title"
-              className="mt-1 text-2xl text-[var(--ink)]"
+              className="mt-1 truncate text-2xl text-[var(--ink)]"
               style={{ fontFamily: 'var(--font-display)' }}
             >
               Bill #{displayNo}
@@ -540,14 +664,14 @@ function ReportBillDrawer({ orderId, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-[var(--line)] p-2 text-[var(--muted)] hover:bg-black/[0.03]"
+            className="shrink-0 rounded-full border border-[var(--line)] p-2 text-[var(--muted)] hover:bg-black/[0.03]"
             aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {orderQuery.isLoading ? (
             <p className="inline-flex items-center gap-2 text-sm text-[var(--muted)]">
               <LoaderCircle size={16} className="animate-spin" />
@@ -620,7 +744,7 @@ function ReportBillDrawer({ orderId, onClose }) {
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-[var(--line)] px-5 py-4">
+        <div className="shrink-0 border-t border-[var(--line)] px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
           <Button className="w-full" variant="secondary" onClick={onClose}>
             Close
           </Button>
@@ -633,8 +757,8 @@ function ReportBillDrawer({ orderId, onClose }) {
 function ReportTable({ headers, rows }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <ScrollTable minWidthClass="min-w-[28rem]">
+        <table className="w-full text-left text-sm">
           <thead className="bg-[var(--surface)]/80 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
             <tr>
               {headers.map((h) => (
@@ -664,7 +788,7 @@ function ReportTable({ headers, rows }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, Layers3, Plus } from 'lucide-react';
+import { GripVertical, Layers3, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
@@ -10,10 +10,17 @@ import { Input, Select, Textarea } from '../../shared/ui/FormControls.jsx';
 import { FormSection } from '../../shared/ui/FormSection.jsx';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
 
+let rowKey = 0;
+function newCategoryRow() {
+  rowKey += 1;
+  return { key: `row-${rowKey}`, name: '', description: '', isEnabled: true };
+}
+
 export function AdminCategoriesPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editor, setEditor] = useState(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [formError, setFormError] = useState(null);
   const [actionError, setActionError] = useState(null);
@@ -46,13 +53,26 @@ export function AdminCategoriesPage() {
     }
   }, [selectedMenuId, menuIdParam, setSearchParams]);
 
+  function openBulkCreate() {
+    setFormError(null);
+    setBulkOpen(true);
+  }
+
   const saveMutation = useMutation({
-    mutationFn: async ({ id, menuId, payload }) => {
-      if (id) return api.updateAdminCategory(id, payload);
-      return api.createAdminCategory(menuId, payload);
-    },
+    mutationFn: async ({ id, payload }) => api.updateAdminCategory(id, payload),
     onSuccess: async () => {
       setEditor(null);
+      setFormError(null);
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'menus'] });
+    },
+    onError: (error) => setFormError(error.message),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: ({ menuId, categories: rows }) =>
+      api.bulkCreateAdminCategories(menuId, { categories: rows }),
+    onSuccess: async () => {
+      setBulkOpen(false);
       setFormError(null);
       await queryClient.invalidateQueries({ queryKey: ['admin', 'menus'] });
     },
@@ -156,26 +176,14 @@ export function AdminCategoriesPage() {
             Organize dishes into sections. Drag to reorder; disable a section to hide it from guests.
           </p>
         </div>
-        <Button
-          disabled={!selectedMenuId}
-          onClick={() => {
-            setFormError(null);
-            setEditor({
-              id: null,
-              menuId: selectedMenuId,
-              name: '',
-              description: '',
-              isEnabled: true,
-            });
-          }}
-        >
+        <Button disabled={!selectedMenuId} onClick={openBulkCreate}>
           <Plus size={16} />
-          Add category
+          Add categories
         </Button>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Menu" htmlFor="category-menu" className="min-w-[220px] flex-1 sm:max-w-sm">
+        <Field label="Menu" htmlFor="category-menu" className="w-full min-w-0 flex-1 sm:min-w-[220px] sm:max-w-sm">
           <Select
             id="category-menu"
             value={selectedMenuId}
@@ -223,17 +231,8 @@ export function AdminCategoriesPage() {
           <EmptyCategories
             title="No categories yet"
             text="Add sections like Starters, Mains, or Desserts, then attach dishes."
-            action={() => {
-              setFormError(null);
-              setEditor({
-                id: null,
-                menuId: selectedMenuId,
-                name: '',
-                description: '',
-                isEnabled: true,
-              });
-            }}
-            label="Add category"
+            action={openBulkCreate}
+            label="Add categories"
           />
         ) : null}
 
@@ -321,11 +320,7 @@ export function AdminCategoriesPage() {
                   >
                     Dishes
                   </Link>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConfirm(category)}
-                  >
+                  <Button size="sm" variant="ghost" onClick={() => setConfirm(category)}>
                     Delete
                   </Button>
                 </div>
@@ -336,8 +331,29 @@ export function AdminCategoriesPage() {
       </section>
 
       <Modal
+        open={bulkOpen}
+        title="Add categories"
+        subtitle="Add one or more sections, then create them all at once."
+        onClose={() => !bulkCreateMutation.isPending && setBulkOpen(false)}
+      >
+        {bulkOpen && selectedMenuId ? (
+          <BulkCategoryForm
+            error={formError}
+            loading={bulkCreateMutation.isPending}
+            onCancel={() => setBulkOpen(false)}
+            onSubmit={(rows) =>
+              bulkCreateMutation.mutate({
+                menuId: selectedMenuId,
+                categories: rows,
+              })
+            }
+          />
+        ) : null}
+      </Modal>
+
+      <Modal
         open={Boolean(editor)}
-        title={editor?.id ? 'Edit category' : 'New category'}
+        title="Edit category"
         subtitle="Categories structure the guest menu."
         onClose={() => !saveMutation.isPending && setEditor(null)}
       >
@@ -350,7 +366,6 @@ export function AdminCategoriesPage() {
             onSubmit={(payload) =>
               saveMutation.mutate({
                 id: editor.id,
-                menuId: editor.menuId,
                 payload,
               })
             }
@@ -369,6 +384,141 @@ export function AdminCategoriesPage() {
         onConfirm={() => confirm && deleteMutation.mutate(confirm.id)}
       />
     </div>
+  );
+}
+
+function BulkCategoryForm({ error, loading, onSubmit, onCancel }) {
+  const [rows, setRows] = useState(() => [newCategoryRow()]);
+  const [localError, setLocalError] = useState(null);
+
+  function updateRow(key, patch) {
+    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+
+  function removeRow(key) {
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((row) => row.key !== key)));
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const prepared = rows
+      .map((row) => ({
+        name: row.name.trim(),
+        description: row.description.trim() || null,
+        isEnabled: row.isEnabled !== false,
+      }))
+      .filter((row) => row.name);
+
+    if (prepared.length === 0) {
+      setLocalError('Enter at least one category name');
+      return;
+    }
+
+    const blankNamed = rows.some((row) => !row.name.trim() && row.description.trim());
+    if (blankNamed) {
+      setLocalError('Every row with a description needs a name');
+      return;
+    }
+
+    setLocalError(null);
+    onSubmit(prepared);
+  }
+
+  const namedCount = rows.filter((r) => r.name.trim()).length;
+
+  return (
+    <form className="space-y-5" onSubmit={handleSubmit}>
+      {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
+
+      <div className="max-h-[min(52vh,28rem)] space-y-3 overflow-y-auto pr-0.5">
+        {rows.map((row, index) => (
+          <section
+            key={row.key}
+            className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]/60 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-[var(--line)] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--teal)]/15 text-xs font-bold text-[var(--teal)]">
+                  {index + 1}
+                </span>
+                <h3 className="text-sm font-semibold text-[var(--ink)]">Category {index + 1}</h3>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={loading || rows.length <= 1}
+                onClick={() => removeRow(row.key)}
+                className="gap-1.5"
+              >
+                <Trash2 size={14} />
+                Remove
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              <Field label="Name" htmlFor={`bulk-cat-name-${row.key}`} required>
+                <Input
+                  id={`bulk-cat-name-${row.key}`}
+                  value={row.name}
+                  onChange={(event) => updateRow(row.key, { name: event.target.value })}
+                  placeholder="Starters"
+                  maxLength={120}
+                  disabled={loading}
+                  autoFocus={index === 0}
+                />
+              </Field>
+              <Field label="Description" htmlFor={`bulk-cat-desc-${row.key}`}>
+                <Textarea
+                  id={`bulk-cat-desc-${row.key}`}
+                  value={row.description}
+                  onChange={(event) => updateRow(row.key, { description: event.target.value })}
+                  placeholder="Optional"
+                  rows={2}
+                  maxLength={1000}
+                  disabled={loading}
+                  className="resize-none"
+                />
+              </Field>
+              <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[var(--line)]"
+                  checked={row.isEnabled !== false}
+                  onChange={(event) => updateRow(row.key, { isEnabled: event.target.checked })}
+                  disabled={loading}
+                />
+                Enabled on guest menu
+              </label>
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={loading || rows.length >= 50}
+        onClick={() => setRows((prev) => [...prev, newCategoryRow()])}
+        className="gap-2"
+      >
+        <Plus size={16} />
+        Add another category
+      </Button>
+
+      <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
+        <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading
+            ? 'Creating…'
+            : `Create ${namedCount || rows.length} ${
+                (namedCount || rows.length) === 1 ? 'category' : 'categories'
+              }`}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -429,11 +579,11 @@ function CategoryForm({ initial, error, loading, onSubmit, onCancel }) {
         </label>
       </FormSection>
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" disabled={loading} onClick={onCancel}>
+        <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
           Cancel
         </Button>
         <Button type="submit" disabled={loading}>
-          {loading ? 'Saving…' : initial.id ? 'Save changes' : 'Create category'}
+          {loading ? 'Saving…' : 'Save changes'}
         </Button>
       </div>
     </form>

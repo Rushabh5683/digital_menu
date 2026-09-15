@@ -178,3 +178,21 @@ export async function updateRestaurantCaptain(restaurantId, captainId, body = {}
 export async function deactivateRestaurantCaptain(restaurantId, captainId) {
   return updateRestaurantCaptain(restaurantId, captainId, { isActive: false });
 }
+
+export async function deleteRestaurantCaptain(restaurantId, captainId) {
+  const id = validateCuid(captainId, 'captainId');
+  const existing = await prisma.user.findFirst({
+    where: {
+      id,
+      restaurantId,
+      role: UserRoles.RESTAURANT_CAPTAIN,
+    },
+    select: { id: true, name: true, email: true },
+  });
+  if (!existing) {
+    throw new AppError('Captain not found', 404);
+  }
+
+  await prisma.user.delete({ where: { id: existing.id } });
+  return { deleted: true, captainId: existing.id };
+}

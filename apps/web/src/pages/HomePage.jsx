@@ -13,15 +13,15 @@ export function HomePage() {
         : '/login';
 
   return (
-    <section className="max-w-2xl">
+    <section className="w-full min-w-0 max-w-2xl">
       <p className="text-sm font-medium text-[var(--color-accent)]">Digital Menu platform</p>
       <h2
-        className="mt-3 text-4xl leading-tight tracking-tight sm:text-5xl"
+        className="mt-3 break-words text-3xl leading-tight tracking-tight sm:text-5xl"
         style={{ fontFamily: 'var(--font-display)' }}
       >
         Browse the menu. See the attention.
       </h2>
-      <p className="mt-5 text-lg leading-relaxed text-[var(--color-muted)]">
+      <p className="mt-5 text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
         Customers stay anonymous. Staff sign in with role-based access — platform super admins and
         restaurant admins each see only what they should.
       </p>

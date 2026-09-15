@@ -3,7 +3,7 @@ function cx(...parts) {
 }
 
 const baseControl =
-  'w-full rounded-2xl border bg-white px-4 py-3 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60';
+  'w-full min-w-0 rounded-2xl border bg-white px-4 py-3 text-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-60';
 
 function controlTone(error) {
   return error

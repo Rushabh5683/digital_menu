@@ -1,6 +1,6 @@
 /**
  * Default dietary / label tags for dish create/edit.
- * Admins only select from this list — no freeform custom tags.
+ * Admins can also add a custom tag under each section.
  */
 export const DIETARY_TAG_GROUPS = [
   {
@@ -25,6 +25,11 @@ export const DIETARY_TAG_GROUPS = [
     tags: ['Halal', 'Mild', 'Spicy', 'Hot'],
   },
   {
+    label: 'Serves',
+    tags: ['Serves 1', 'Serves 2', 'Serves 3', 'Serves 4', 'Serves 5+'],
+    singleSelect: true,
+  },
+  {
     label: 'Highlights',
     tags: ["Chef's Pick", 'Signature', 'Popular', 'Best Seller', 'Must Try', 'New'],
   },
@@ -33,7 +38,30 @@ export const DIETARY_TAG_GROUPS = [
 /** Tag that surfaces a dish in the guest “Signature Dishes” section. */
 export const SIGNATURE_DISH_TAG = 'Signature';
 
+export const SERVES_TAG_GROUP = DIETARY_TAG_GROUPS.find((group) => group.label === 'Serves');
+export const SERVES_TAG_PRESETS = SERVES_TAG_GROUP?.tags || [];
+
 export const DIETARY_TAG_PRESETS = DIETARY_TAG_GROUPS.flatMap((group) => group.tags);
+
+export function isServesTag(tag) {
+  return /^serves\s+\d/i.test(String(tag || '').trim());
+}
+
+/** Active portion/serves tag from dietaryTags (at most one expected). */
+export function getServesTag(dietaryTags = []) {
+  const fromList = (dietaryTags || []).find((tag) => isServesTag(tag));
+  return fromList || null;
+}
+
+export function splitDietaryAndServesTags(dietaryTags = []) {
+  const dietary = [];
+  const serves = [];
+  for (const tag of dietaryTags || []) {
+    if (isServesTag(tag)) serves.push(tag);
+    else dietary.push(tag);
+  }
+  return { dietary, serves };
+}
 
 /**
  * Veg / non-veg marker from admin dietary tags only.

@@ -75,7 +75,7 @@ export function FilterSheet({
     menuOptions.extraTags.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[var(--g-ink)]/15 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
       <button
         type="button"
         className="absolute inset-0 cursor-default"
@@ -86,15 +86,14 @@ export function FilterSheet({
         initial={{ opacity: 0, scale: 0.98, y: 30 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.98, y: 30 }}
-        className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200/90 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-stone-200/70 px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3.5 sm:px-5">
           <div className="min-w-0">
             <h3 className="font-serif text-lg font-medium leading-tight text-stone-900">
               Refine menu
             </h3>
-            <span className="block text-[11px] font-normal text-stone-500">
+            <span className="block truncate text-[11px] font-normal text-stone-500">
               {totalActive > 0
                 ? `${totalActive} active · only tags used on this menu`
                 : 'Only options used on this menu'}
@@ -104,14 +103,14 @@ export function FilterSheet({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
+            className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4 no-scrollbar">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar sm:px-5">
           {!hasAnyOptions ? (
             <p className="text-sm text-stone-500">
               No dietary tags on this menu yet. Add tags in admin to enable filters.
@@ -203,11 +202,11 @@ export function FilterSheet({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-stone-200 px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-stone-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-5">
           <button
             type="button"
             onClick={onResetFilters}
-            className="inline-flex cursor-pointer items-center space-x-1.5 rounded-lg p-1.5 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+            className="inline-flex min-h-10 cursor-pointer items-center space-x-1.5 rounded-lg p-1.5 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Reset All</span>
@@ -216,7 +215,7 @@ export function FilterSheet({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-full bg-stone-950 px-6 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
+            className="min-h-10 shrink-0 cursor-pointer rounded-full bg-stone-950 px-6 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
           >
             Apply ({totalActive})
           </button>

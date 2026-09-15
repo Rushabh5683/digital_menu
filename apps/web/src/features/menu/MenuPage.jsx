@@ -51,6 +51,8 @@ import {
   interpretSearchQuery,
   matchesFilters,
 } from './experience/index.js';
+import { isRestaurantStaffRole, useAuth, UserRoles } from '../auth/AuthContext.jsx';
+import { isStaffMenuPreview } from './lib/staffPreview.js';
 
 function parseTableParam(value) {
   if (value == null || value === '') return null;
@@ -68,10 +70,24 @@ function countActiveFilters(filters) {
   );
 }
 
+/** Logged-in restaurant staff / super admin browsing this menu — never count as guest. */
+function isAuthenticatedStaffPreview(user, restaurantSlug) {
+  if (!user || !restaurantSlug) return false;
+  if (user.role === UserRoles.SUPER_ADMIN) return true;
+  if (!isRestaurantStaffRole(user.role)) return false;
+  const staffSlug = user.restaurant?.slug;
+  return Boolean(staffSlug && staffSlug === restaurantSlug);
+}
+
 export function MenuPage() {
   const { restaurantSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user, status: authStatus, isAuthenticated } = useAuth();
   const qrTableNumber = parseTableParam(searchParams.get('table'));
+  const authReady = authStatus !== 'loading';
+  const isStaffPreview =
+    isStaffMenuPreview(searchParams) ||
+    (authReady && isAuthenticated && isAuthenticatedStaffPreview(user, restaurantSlug));
   const searchInputRef = useRef(null);
 
   const [pickedTable, setPickedTable] = useState(() =>
@@ -111,8 +127,10 @@ export function MenuPage() {
 
   const { data, isLoading, isError, error, refetch, isFetching } = useRestaurantMenu(restaurantSlug);
   const { session, status: sessionStatus } = useAnonymousSession(restaurantSlug, {
-    enabled: Boolean(restaurantSlug),
+    // Wait for auth so a logged-in admin does not race a guest session create.
+    enabled: Boolean(restaurantSlug) && authReady && !isStaffPreview,
     tableNumber: effectiveTableNumber,
+    preview: isStaffPreview,
   });
 
   const rawCategories = data?.menu?.categories ?? [];
@@ -154,6 +172,14 @@ export function MenuPage() {
     anonymousSessionId: session?.anonymousSessionId,
     dishesById,
   });
+
+  const cartQuantities = useMemo(() => {
+    const map = {};
+    for (const item of cart.items || []) {
+      if (item?.dishId) map[item.dishId] = item.quantity || 0;
+    }
+    return map;
+  }, [cart.items]);
 
   const {
     order: myOrder,
@@ -214,6 +240,11 @@ export function MenuPage() {
   useEffect(() => {
     if (!restaurantSlug) return;
 
+    if (isStaffPreview) {
+      setNeedsPicker(false);
+      return;
+    }
+
     if (qrTableNumber) {
       saveStoredTable(restaurantSlug, {
         tableNumber: qrTableNumber,
@@ -232,7 +263,7 @@ export function MenuPage() {
     }
 
     setNeedsPicker(true);
-  }, [restaurantSlug, qrTableNumber]);
+  }, [restaurantSlug, qrTableNumber, isStaffPreview]);
 
   useEffect(() => {
     if (!restaurantSlug || sessionStatus !== 'ready' || !session?.sessionId) {
@@ -319,6 +350,38 @@ export function MenuPage() {
       const top = el.getBoundingClientRect().top + window.scrollY - 130;
       window.scrollTo({ top, behavior: 'smooth' });
     }
+  }
+
+  function handleOpenMenu() {
+    setShortlistOpen(false);
+    setHelpOpen(false);
+    setFilterSheetOpen(false);
+    setShowComparisonModal(false);
+    setSelectedDish(null);
+    setMyOrderOpen(false);
+    setCartOpen(false);
+    handleSelectCategory('all');
+  }
+
+  function closeMenuOverlays() {
+    setShortlistOpen(false);
+    setHelpOpen(false);
+    setFilterSheetOpen(false);
+    setShowComparisonModal(false);
+    setSelectedDish(null);
+    setMyOrderOpen(false);
+    setCartOpen(false);
+  }
+
+  function handleFocusSearch() {
+    closeMenuOverlays();
+    // Wait a frame so the picks sheet unmounts before focusing the search field.
+    window.requestAnimationFrame(() => {
+      const el = document.getElementById('main-search-input');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.focus({ preventScroll: true });
+    });
   }
 
   function handleToggleShortlist(dish, event) {
@@ -448,19 +511,60 @@ export function MenuPage() {
   }
 
   function handleAddShortlistToOrder(items) {
-    for (const item of items || []) {
+    const selected = items || [];
+    if (selected.length === 0) return;
+
+    for (const item of selected) {
       addDish(item.dish, item.quantity || 1);
       trackDishSelection(item.dish, item.dish.categoryId || item.dish.category);
     }
     setShortlistOpen(false);
     setCartOpen(true);
-    setToast({ open: true, message: 'Picks added to your order' });
+    setToast({
+      open: true,
+      message:
+        selected.length === 1
+          ? '1 pick added to your order'
+          : `${selected.length} picks added to your order`,
+    });
   }
 
   function handleAddDishToOrder(dish, quantity = 1) {
     addDish(dish, quantity);
     trackDishSelection(dish, dish.categoryId || dish.category);
     showAddedToast(dish.name);
+  }
+
+  if (showEntrySplash) {
+    const splashRestaurant = data?.restaurant || {
+      name:
+        String(restaurantSlug || '')
+          .split('-')
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ') || 'our restaurant',
+    };
+    const splashTableLabel = isStaffPreview
+      ? effectiveTableNumber
+        ? `Table ${String(effectiveTableNumber).padStart(2, '0')} · Preview`
+        : 'Staff preview'
+      : (effectiveTableNumber
+          ? `Table ${String(effectiveTableNumber).padStart(2, '0')}`
+          : null) ||
+        session?.tableLabel ||
+        'Your table';
+
+    return (
+      <MenuEntrySplash
+        restaurant={splashRestaurant}
+        tableLabel={splashTableLabel}
+        canFinish={!isLoading && (Boolean(data) || isError)}
+        onEnter={() => {
+          setMenuFadeIn(true);
+          setShowEntrySplash(false);
+        }}
+      />
+    );
   }
 
   if (isLoading || (isFetching && !data)) {
@@ -485,25 +589,12 @@ export function MenuPage() {
   const cartDisplayTotal = computeExclusiveGst(cart.subtotal, gstConfig).total;
   const currency = restaurant.currencyCode || 'INR';
 
-  if (needsPicker && !effectiveTableNumber) {
+  if (!isStaffPreview && needsPicker && !effectiveTableNumber) {
     return (
       <TablePicker
         restaurant={restaurant}
         restaurantSlug={restaurantSlug}
         onSelect={handlePickTable}
-      />
-    );
-  }
-
-  if (showEntrySplash) {
-    return (
-      <MenuEntrySplash
-        restaurant={restaurant}
-        tableLabel={tableLabel}
-        onEnter={() => {
-          setMenuFadeIn(true);
-          setShowEntrySplash(false);
-        }}
       />
     );
   }
@@ -529,9 +620,14 @@ export function MenuPage() {
       }}
     >
       <div className="guest-experience-shell">
+        {isStaffPreview ? (
+          <div className="sticky top-0 z-30 border-b border-amber-200/80 bg-amber-50 px-4 py-2 text-center text-[11px] font-semibold tracking-wide text-amber-950">
+            Staff preview · not counted as a guest menu session
+          </div>
+        ) : null}
         <ExperienceHeader
           restaurant={restaurant}
-          tableLabel={tableLabel}
+          tableLabel={isStaffPreview ? 'Staff preview' : tableLabel}
           shortlistCount={shortlistItems.length}
           hasActiveOrder={Boolean(hasActiveOrder)}
           onOpenMyOrder={() => {
@@ -604,10 +700,13 @@ export function MenuPage() {
               searchResult={searchResult}
               shortlistIds={shortlistIds}
               comparisonPair={comparisonPair}
+              quantities={cartQuantities}
               onOpenDetail={openDish}
               onToggleShortlist={handleToggleShortlist}
               onToggleCompare={handleToggleCompare}
               onAddToOrder={(dish) => handleAddDishToOrder(dish, 1)}
+              onIncrement={increment}
+              onDecrement={decrement}
               onClearSearch={() => {
                 handleSearchCommit();
                 setSearchQuery('');
@@ -628,10 +727,13 @@ export function MenuPage() {
                   dishes={signatureDishes}
                   shortlistIds={shortlistIds}
                   comparisonPair={comparisonPair}
+                  quantities={cartQuantities}
                   onOpenDetail={openDish}
                   onToggleShortlist={handleToggleShortlist}
                   onToggleCompare={handleToggleCompare}
                   onAddToOrder={(dish) => handleAddDishToOrder(dish, 1)}
+                  onIncrement={increment}
+                  onDecrement={decrement}
                   currency={currency}
                   restaurantName={restaurant.name}
                 />
@@ -664,10 +766,13 @@ export function MenuPage() {
                       dishes={category.dishes}
                       shortlistIds={shortlistIds}
                       comparisonPair={comparisonPair}
+                      quantities={cartQuantities}
                       onOpenDetail={openDish}
                       onToggleShortlist={handleToggleShortlist}
                       onToggleCompare={handleToggleCompare}
                       onAddToOrder={(dish) => handleAddDishToOrder(dish, 1)}
+                      onIncrement={increment}
+                      onDecrement={decrement}
                       currency={currency}
                     />
                   ))}
@@ -682,7 +787,7 @@ export function MenuPage() {
         </main>
       </div>
 
-      {(comparisonPair || cart.itemCount > 0)
+      {(comparisonPair || cart.itemCount > 0) && !cartOpen && !myOrderOpen
         ? createPortal(
             <div
               className="pointer-events-none fixed inset-x-0 z-[45] mx-auto flex w-full max-w-lg flex-col gap-2 px-3"
@@ -743,32 +848,30 @@ export function MenuPage() {
           )
         : null}
 
+      {!cartOpen && !myOrderOpen ? (
       <BottomNavBar
         shortlistCount={shortlistItems.length}
         hasComparison={Boolean(comparisonPair)}
-        onOpenMenu={() => {
-          document.getElementById('experience-category-nav')?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
-          });
-        }}
+        onOpenMenu={handleOpenMenu}
         onOpenHelpMeChoose={() => {
+          closeMenuOverlays();
           setHelpOpen(true);
           trackExperienceEvent(EventTypes.HELP_ME_CHOOSE_STARTED);
         }}
-        onOpenComparison={() => setShowComparisonModal(true)}
+        onOpenComparison={() => {
+          closeMenuOverlays();
+          setShowComparisonModal(true);
+        }}
         onOpenShortlist={() => {
+          closeMenuOverlays();
           setShortlistOpen(true);
           trackExperienceEvent(EventTypes.SHORTLIST_VIEWED, {
             metadata: { count: shortlistItems.length },
           });
         }}
-        onFocusSearch={() => {
-          const el = document.getElementById('main-search-input');
-          el?.focus();
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }}
+        onFocusSearch={handleFocusSearch}
       />
+      ) : null}
 
       <GuestToast
         open={toast.open}
@@ -909,10 +1012,7 @@ export function MenuPage() {
         }}
         onAddMore={() => {
           setMyOrderOpen(false);
-          document.getElementById('experience-category-nav')?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
-          });
+          handleSelectCategory('all');
         }}
         order={myOrder}
         restaurantName={restaurant.name}

@@ -11,6 +11,7 @@ import {
 import {
   normalizeEmail,
   normalizePhone,
+  sanitizePhoneInput,
   validateEmailField,
   validatePhoneField,
 } from '../../../shared/lib/validation.js';
@@ -52,7 +53,7 @@ export function RestaurantForm({
         slug: initialValues.slug || '',
         description: initialValues.description || '',
         email: initialValues.email || '',
-        phone: initialValues.phone || '',
+        phone: sanitizePhoneInput(initialValues.phone || ''),
         address: initialValues.address || '',
         logoUrl: initialValues.logoUrl || '',
         status: initialValues.status || 'ACTIVE',
@@ -152,12 +153,12 @@ export function RestaurantForm({
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+    <form className="min-w-0 space-y-5" onSubmit={handleSubmit} noValidate>
       {(localError || (error && !Object.keys(error?.body?.details?.fields || {}).length)) && (
         <Alert tone="error">{localError || error.message}</Alert>
       )}
 
-      <FormSection title="Restaurant">
+      <FormSection title="Restaurant" className="min-w-0">
         <Field label="Restaurant name" required error={fieldErrors.name}>
           <Input
             value={values.name}
@@ -193,7 +194,7 @@ export function RestaurantForm({
           />
         </Field>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Restaurant email" required error={fieldErrors.email}>
             <Input
               type="email"
@@ -213,11 +214,11 @@ export function RestaurantForm({
               type="tel"
               inputMode="numeric"
               autoComplete="tel"
-              maxLength={14}
+              maxLength={10}
               value={values.phone}
               error={fieldErrors.phone}
               placeholder="9876543210"
-              onChange={(e) => update('phone', e.target.value)}
+              onChange={(e) => update('phone', sanitizePhoneInput(e.target.value))}
             />
           </Field>
         </div>
@@ -258,8 +259,9 @@ export function RestaurantForm({
         <FormSection
           title="Restaurant admin"
           description="Creates a RESTAURANT_ADMIN account linked to this restaurant, plus an unpublished starter menu. The restaurant starts as Active."
+          className="min-w-0"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Admin name" required error={fieldErrors.adminName}>
               <Input
                 value={values.adminName}

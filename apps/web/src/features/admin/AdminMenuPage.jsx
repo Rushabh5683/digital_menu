@@ -10,6 +10,7 @@ import { Input, Textarea } from '../../shared/ui/FormControls.jsx';
 import { FormSection } from '../../shared/ui/FormSection.jsx';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
 import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
+import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
 
 function formatUpdated(value) {
   if (!value) return '—';
@@ -95,9 +96,9 @@ export function AdminMenuPage() {
   const published = useMemo(() => menus.find((menu) => menu.isPublished), [menus]);
 
   return (
-    <div className="space-y-6 menu-fade-up">
+    <div className="min-w-0 space-y-6 menu-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--teal)]">Menu</p>
           <h2
             className="mt-2 text-3xl tracking-tight text-[var(--ink)]"
@@ -112,7 +113,7 @@ export function AdminMenuPage() {
         <div className="flex flex-wrap gap-2">
           {slug && published ? (
             <a
-              href={`/menu/${slug}`}
+              href={staffMenuPreviewPath(slug)}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--ink)] hover:bg-black/[0.02]"
@@ -201,7 +202,7 @@ export function AdminMenuPage() {
                 <div className="flex flex-wrap gap-2">
                   {slug && menu.isPublished ? (
                     <a
-                      href={`/menu/${slug}`}
+                      href={staffMenuPreviewPath(slug)}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold"
