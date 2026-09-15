@@ -181,7 +181,7 @@ export function RestaurantAdminLayout() {
       {mobileOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-[var(--ink)]/20 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-[255] bg-[var(--ink)]/20 backdrop-blur-[2px] lg:hidden"
           aria-label="Close navigation"
           onClick={() => setMobileOpen(false)}
         />
@@ -189,7 +189,7 @@ export function RestaurantAdminLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[var(--admin-sidebar-width)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:h-full lg:max-w-none lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-[260] flex h-dvh w-[var(--admin-sidebar-width)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
         style={{
@@ -262,12 +262,13 @@ export function RestaurantAdminLayout() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="z-30 shrink-0 border-b border-[var(--line)] bg-[var(--surface-elevated)]/90 backdrop-blur-md">
+        {/* Fixed on mobile so the hamburger stays above modals (add dish, etc.). */}
+        <header className="fixed inset-x-0 top-0 z-[250] shrink-0 border-b border-[var(--line)] bg-[var(--surface-elevated)]/95 backdrop-blur-md lg:static lg:z-30">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] lg:hidden"
+                className="rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open navigation"
               >
@@ -297,6 +298,7 @@ export function RestaurantAdminLayout() {
             </div>
           </div>
         </header>
+        <div className="h-[57px] shrink-0 lg:hidden" aria-hidden />
 
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8 lg:py-8 [-webkit-overflow-scrolling:touch]">
           <Outlet context={{ restaurant }} />

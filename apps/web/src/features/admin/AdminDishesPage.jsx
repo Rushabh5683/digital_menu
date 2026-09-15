@@ -447,6 +447,10 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
   const [description, setDescription] = useState(initial.description || '');
   const [price, setPrice] = useState(initial.price || '');
   const [imageUrl, setImageUrl] = useState(initial.imageUrl || '');
+  const [pendingFile, setPendingFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(() =>
+    initial.imageUrl ? resolveMediaUrl(initial.imageUrl) : '',
+  );
   const [ingredients, setIngredients] = useState(initial.ingredients || '');
   const [dietaryTags, setDietaryTags] = useState(initial.dietaryTags || []);
   const [customByGroup, setCustomByGroup] = useState(() => {
@@ -460,24 +464,41 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
   const [localError, setLocalError] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  async function onImageChange(event) {
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  function clearPendingPreview() {
+    setPreviewUrl((current) => {
+      if (current && current.startsWith('blob:')) URL.revokeObjectURL(current);
+      return '';
+    });
+    setPendingFile(null);
+  }
+
+  function onImageChange(event) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
       setLocalError('Image must be 5 MB or smaller');
       return;
     }
-    setUploading(true);
     setLocalError(null);
-    try {
-      const result = await api.uploadAdminDishImage(file);
-      setImageUrl(result.imageUrl);
-    } catch (err) {
-      setLocalError(err.message || 'Image upload failed');
-    } finally {
-      setUploading(false);
-      event.target.value = '';
-    }
+    setPendingFile(file);
+    setPreviewUrl((current) => {
+      if (current && current.startsWith('blob:')) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+  }
+
+  function removeImage() {
+    clearPendingPreview();
+    setImageUrl('');
   }
 
   function toggleTag(tag) {
@@ -564,7 +585,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
     setLocalError(null);
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     setLocalError(null);
     const trimmedName = name.trim();
@@ -574,17 +595,40 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
       setLocalError('Enter a valid price ≥ 0');
       return;
     }
+
+    let nextImageUrl = imageUrl || null;
+    if (pendingFile) {
+      setUploading(true);
+      try {
+        const result = await api.uploadAdminDishImage(pendingFile);
+        // Prefer absolute URL so split-host frontends can load the image.
+        nextImageUrl =
+          resolveMediaUrl(result.imageUrl || '') || result.imageUrl || null;
+        setImageUrl(nextImageUrl || '');
+      } catch (err) {
+        setLocalError(err.message || 'Image upload failed');
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    } else if (nextImageUrl) {
+      nextImageUrl = resolveMediaUrl(nextImageUrl) || nextImageUrl;
+    }
+
     onSubmit({
       categoryId,
       name: trimmedName,
       description: trimmedDescription,
       price: priceNumber,
-      imageUrl: imageUrl || null,
+      imageUrl: nextImageUrl,
       ingredients: parseList(ingredients),
       dietaryTags,
       isAvailable,
     });
   }
+
+  const busy = loading || uploading;
+  const showPreview = Boolean(previewUrl);
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
@@ -599,7 +643,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               onChange={(event) => setName(event.target.value)}
               placeholder="Butter chicken"
               maxLength={120}
-              disabled={loading}
+              disabled={busy}
               autoFocus
               required
             />
@@ -609,7 +653,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               id="dish-form-category"
               value={categoryId}
               onChange={(event) => setCategoryId(event.target.value)}
-              disabled={loading}
+              disabled={busy}
               required
             >
               <option value="">Select category</option>
@@ -628,7 +672,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               step="1"
               value={price}
               onChange={(event) => setPrice(event.target.value)}
-              disabled={loading}
+              disabled={busy}
               required
             />
           </Field>
@@ -639,7 +683,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={3}
-            disabled={loading}
+            disabled={busy}
             placeholder="Short guest-facing description"
             required
           />
@@ -654,7 +698,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             value={ingredients}
             onChange={(event) => setIngredients(event.target.value)}
             placeholder="Chicken, butter, tomato, cream"
-            disabled={loading}
+            disabled={busy}
           />
         </Field>
         <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
@@ -663,7 +707,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             className="h-4 w-4 rounded border-[var(--line)]"
             checked={isAvailable}
             onChange={(event) => setIsAvailable(event.target.checked)}
-            disabled={loading}
+            disabled={busy}
           />
           Available to order / show on menu
         </label>
@@ -809,8 +853,8 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
       <FormSection title="Image">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="h-28 w-40 overflow-hidden rounded-2xl border border-[var(--line)] bg-black/[0.03]">
-            {imageUrl ? (
-              <img src={resolveMediaUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
+            {showPreview ? (
+              <img src={previewUrl} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--muted)]">
                 <ImagePlus size={20} />
@@ -824,18 +868,23 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
-              disabled={loading || uploading}
+              disabled={busy}
               onChange={onImageChange}
               className="block w-full text-sm text-[var(--muted)] file:mr-3 file:rounded-xl file:border-0 file:bg-[var(--ink)] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
             />
-            <p className="text-xs text-[var(--muted)]">JPG, PNG, WEBP, or GIF · max 5 MB</p>
-            {imageUrl ? (
+            <p className="text-xs text-[var(--muted)]">
+              JPG, PNG, WEBP, or GIF · max 5 MB
+              {pendingFile
+                ? ' · Selected — uploads when you click Save changes'
+                : ''}
+            </p>
+            {showPreview || imageUrl ? (
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                disabled={loading || uploading}
-                onClick={() => setImageUrl('')}
+                disabled={busy}
+                onClick={removeImage}
               >
                 Remove image
               </Button>
@@ -846,11 +895,17 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
       </FormSection>
 
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" disabled={loading || uploading} onClick={onCancel}>
+        <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={loading || uploading}>
-          {loading ? 'Saving…' : initial.id ? 'Save changes' : 'Create dish'}
+        <Button type="submit" disabled={busy}>
+          {uploading
+            ? 'Uploading…'
+            : loading
+              ? 'Saving…'
+              : initial.id
+                ? 'Save changes'
+                : 'Create dish'}
         </Button>
       </div>
     </form>
