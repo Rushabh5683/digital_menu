@@ -938,8 +938,11 @@ export async function updateOrderStatus(
 
     const method = String(paymentMethod || '').trim().toUpperCase();
     const paidAt = backdateStamp || new Date();
+    const hasPartSplits = Array.isArray(paymentSplits) && paymentSplits.length >= 2;
+    const treatAsPart =
+      method === 'PART' || (hasPartSplits && !SINGLE_PAYMENT_METHODS.has(method));
 
-    if (method === 'PART') {
+    if (treatAsPart) {
       const splits = parsePaymentSplits(paymentSplits, existing.total);
       data.paymentMethod = 'PART';
       data.paymentSplits = splits;
@@ -1114,8 +1117,11 @@ export async function updateOrderPayment(
 
   const method = String(paymentMethod || '').trim().toUpperCase();
   const data = {};
+  const hasPartSplits = Array.isArray(paymentSplits) && paymentSplits.length >= 2;
+  const treatAsPart =
+    method === 'PART' || (hasPartSplits && !SINGLE_PAYMENT_METHODS.has(method));
 
-  if (method === 'PART') {
+  if (treatAsPart) {
     const splits = parsePaymentSplits(paymentSplits, existing.total);
     data.paymentMethod = 'PART';
     data.paymentSplits = splits;

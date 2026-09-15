@@ -38,8 +38,26 @@ function formatMoney(value) {
   }).format(Number(value || 0));
 }
 
-function emptySplitRow() {
-  return { method: 'CASH', amount: '', note: '' };
+function emptySplitRow(method = 'CASH', amount = '') {
+  return { method, amount, note: '' };
+}
+
+/** Keep the last split line equal to bill − sum of earlier lines. */
+function withAutoRemaining(rows, billTotal, editedIndex = -1) {
+  if (!Array.isArray(rows) || rows.length < 2) return rows;
+  const next = rows.map((row) => ({ ...row }));
+  const last = next.length - 1;
+  // Only auto-fill when editing an earlier line (or seeding).
+  if (editedIndex === last) return next;
+  const priorSum = money2(
+    next.slice(0, last).reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+  );
+  const remaining = money2(billTotal - priorSum);
+  next[last] = {
+    ...next[last],
+    amount: remaining > 0 ? String(remaining) : remaining === 0 ? '0' : String(remaining),
+  };
+  return next;
 }
 
 /**
@@ -71,18 +89,24 @@ export function PaymentMethodModal({
     enabled: open && step === 'appreciation',
   });
 
+  const billTotal = money2(orderTotal);
+
   useEffect(() => {
     if (!open) return;
     setStep('payment');
     setMethod('CASH');
     setNote('');
-    setSplits([emptySplitRow(), emptySplitRow()]);
+    setSplits(
+      withAutoRemaining(
+        [emptySplitRow('CASH', ''), emptySplitRow('UPI_GPAY', '')],
+        money2(orderTotal),
+      ),
+    );
     setAppreciation('');
     setSelectedCaptainIds([]);
     setFormError('');
-  }, [open]);
+  }, [open, orderTotal]);
 
-  const billTotal = money2(orderTotal);
   const splitSum = useMemo(
     () => money2(splits.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)),
     [splits],
@@ -96,22 +120,57 @@ export function PaymentMethodModal({
   const needsNote = method === 'OTHER' || method === 'UPI_OTHER';
   const isPart = method === 'PART';
 
+  const selectMethod = (id) => {
+    setMethod(id);
+    setFormError('');
+    if (id === 'PART') {
+      setSplits(
+        withAutoRemaining(
+          [emptySplitRow('CASH', ''), emptySplitRow('UPI_GPAY', '')],
+          billTotal,
+        ),
+      );
+    }
+  };
+
+  const updateSplitMethod = (index, nextMethod) => {
+    setSplits((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], method: nextMethod };
+      return next;
+    });
+  };
+
+  const updateSplitAmount = (index, value) => {
+    setSplits((prev) => {
+      const next = prev.map((row, i) => (i === index ? { ...row, amount: value } : row));
+      return withAutoRemaining(next, billTotal, index);
+    });
+  };
+
   const goToAppreciation = () => {
     setFormError('');
     if (isPart) {
-      const parsed = splits.map((row) => ({
+      const balanced = withAutoRemaining(splits, billTotal);
+      const parsed = balanced.map((row) => ({
         method: row.method,
         amount: money2(row.amount),
         note: row.note?.trim() || undefined,
       }));
-      if (parsed.some((row) => !(row.amount > 0))) {
-        setFormError('Enter an amount greater than 0 on each part-payment line.');
+      if (parsed.some((row) => !row.method || !SINGLE_METHODS.some((m) => m.id === row.method))) {
+        setFormError('Select a payment method on each part-payment line.');
         return;
       }
-      if (Math.abs(splitSum - billTotal) > 0.05) {
+      if (parsed.some((row) => !(row.amount > 0))) {
+        setFormError('Enter an amount greater than 0 on the first part-payment line.');
+        return;
+      }
+      const sum = money2(parsed.reduce((s, row) => s + row.amount, 0));
+      if (Math.abs(sum - billTotal) > 0.05) {
         setFormError(`Part payment must add up to ${formatMoney(billTotal)}.`);
         return;
       }
+      setSplits(balanced);
     }
     setStep('appreciation');
   };
@@ -136,7 +195,9 @@ export function PaymentMethodModal({
     };
 
     if (isPart) {
-      payload.paymentSplits = splits.map((row) => {
+      const balanced = withAutoRemaining(splits, billTotal);
+      payload.paymentMethod = 'PART';
+      payload.paymentSplits = balanced.map((row) => {
         const line = {
           method: row.method,
           amount: money2(row.amount),
@@ -208,7 +269,7 @@ export function PaymentMethodModal({
                     key={id}
                     type="button"
                     disabled={busy}
-                    onClick={() => setMethod(id)}
+                    onClick={() => selectMethod(id)}
                     className={[
                       'flex min-h-14 min-w-0 items-start gap-2.5 rounded-2xl border px-3 py-3 text-left transition',
                       selected
@@ -265,41 +326,54 @@ export function PaymentMethodModal({
                       : `Left ${formatMoney(splitRemaining)}`}
                   </span>
                 </div>
-                {splits.map((row, index) => (
-                  <div key={index} className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-[1fr_6.5rem]">
-                    <select
-                      value={row.method}
-                      disabled={busy}
-                      onChange={(e) => {
-                        const next = [...splits];
-                        next[index] = { ...next[index], method: e.target.value };
-                        setSplits(next);
-                      }}
-                      className="min-w-0 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                <p className="text-[11px] text-[var(--muted)]">
+                  Choose a method on each line. Enter the first amount — the last amount fills
+                  automatically with the remaining bill.
+                </p>
+                {splits.map((row, index) => {
+                  const isLast = index === splits.length - 1;
+                  return (
+                    <div
+                      key={index}
+                      className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-[1fr_6.5rem]"
                     >
-                      {SINGLE_METHODS.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      placeholder="₹"
-                      value={row.amount}
-                      disabled={busy}
-                      onChange={(e) => {
-                        const next = [...splits];
-                        next[index] = { ...next[index], amount: e.target.value };
-                        setSplits(next);
-                      }}
-                      className="rounded-xl border border-[var(--line)] bg-white px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
-                    />
-                  </div>
-                ))}
+                      <select
+                        value={row.method}
+                        disabled={busy}
+                        onChange={(e) => updateSplitMethod(index, e.target.value)}
+                        className="min-w-0 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                        aria-label={`Payment method line ${index + 1}`}
+                      >
+                        {SINGLE_METHODS.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder={isLast ? 'Remaining' : '₹'}
+                        value={row.amount}
+                        readOnly={isLast}
+                        disabled={busy}
+                        onChange={(e) => updateSplitAmount(index, e.target.value)}
+                        className={[
+                          'rounded-xl border border-[var(--line)] px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2',
+                          isLast ? 'bg-[var(--surface)] text-[var(--ink)]' : 'bg-white',
+                        ].join(' ')}
+                        aria-label={
+                          isLast
+                            ? 'Remaining amount (auto)'
+                            : `Amount line ${index + 1}`
+                        }
+                        title={isLast ? 'Auto-calculated remaining' : undefined}
+                      />
+                    </div>
+                  );
+                })}
                 <div className="flex gap-2">
                   {splits.length < 6 ? (
                     <Button
@@ -307,7 +381,11 @@ export function PaymentMethodModal({
                       variant="secondary"
                       size="sm"
                       disabled={busy}
-                      onClick={() => setSplits((prev) => [...prev, emptySplitRow()])}
+                      onClick={() =>
+                        setSplits((prev) =>
+                          withAutoRemaining([...prev, emptySplitRow('CARD', '')], billTotal),
+                        )
+                      }
                     >
                       Add line
                     </Button>
@@ -318,7 +396,9 @@ export function PaymentMethodModal({
                       variant="ghost"
                       size="sm"
                       disabled={busy}
-                      onClick={() => setSplits((prev) => prev.slice(0, -1))}
+                      onClick={() =>
+                        setSplits((prev) => withAutoRemaining(prev.slice(0, -1), billTotal))
+                      }
                     >
                       Remove line
                     </Button>

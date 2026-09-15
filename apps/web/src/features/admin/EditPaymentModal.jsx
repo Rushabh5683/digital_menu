@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CreditCard, Banknote, Smartphone, Wallet, Split, X } from 'lucide-react';
 import { Button } from '../../shared/ui/Button.jsx';
 
@@ -18,6 +18,22 @@ function money2(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function withAutoRemaining(rows, billTotal, editedIndex = -1) {
+  if (!Array.isArray(rows) || rows.length < 2) return rows;
+  const next = rows.map((row) => ({ ...row }));
+  const last = next.length - 1;
+  if (editedIndex === last) return next;
+  const priorSum = money2(
+    next.slice(0, last).reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
+  );
+  const remaining = money2(billTotal - priorSum);
+  next[last] = {
+    ...next[last],
+    amount: String(remaining),
+  };
+  return next;
+}
+
 /**
  * Edit payment method on an already-settled bill.
  */
@@ -34,8 +50,13 @@ export function EditPaymentModal({
 }) {
   const [method, setMethod] = useState(initialMethod || 'CASH');
   const [note, setNote] = useState(initialNote || '');
-  const [splits, setSplits] = useState([{ method: 'CASH', amount: '' }, { method: 'UPI_GPAY', amount: '' }]);
+  const [splits, setSplits] = useState([
+    { method: 'CASH', amount: '' },
+    { method: 'UPI_GPAY', amount: '' },
+  ]);
   const [error, setError] = useState('');
+
+  const billTotal = money2(orderTotal);
 
   useEffect(() => {
     if (!open) return;
@@ -43,41 +64,74 @@ export function EditPaymentModal({
     setNote(initialNote || '');
     if (Array.isArray(initialSplits) && initialSplits.length >= 2) {
       setSplits(
-        initialSplits.map((row) => ({
-          method: row.method || 'CASH',
-          amount: String(row.amount ?? ''),
-        })),
+        withAutoRemaining(
+          initialSplits.map((row) => ({
+            method: row.method || 'CASH',
+            amount: String(row.amount ?? ''),
+          })),
+          money2(orderTotal),
+        ),
       );
     } else {
-      const half = money2(Number(orderTotal || 0) / 2);
-      setSplits([
-        { method: 'CASH', amount: String(half || '') },
-        { method: 'UPI_GPAY', amount: String(money2(Number(orderTotal || 0) - half) || '') },
-      ]);
+      setSplits(
+        withAutoRemaining(
+          [
+            { method: 'CASH', amount: '' },
+            { method: 'UPI_GPAY', amount: '' },
+          ],
+          money2(orderTotal),
+        ),
+      );
     }
     setError('');
   }, [open, initialMethod, initialNote, initialSplits, orderTotal]);
+
+  const splitSum = useMemo(
+    () => money2(splits.reduce((s, row) => s + (Number(row.amount) || 0), 0)),
+    [splits],
+  );
 
   if (!open) return null;
 
   const needsNote = method === 'OTHER' || method === 'UPI_OTHER';
   const isPart = method === 'PART';
-  const splitSum = money2(splits.reduce((s, row) => s + (Number(row.amount) || 0), 0));
-  const billTotal = money2(orderTotal);
+
+  const selectMethod = (id) => {
+    setMethod(id);
+    setError('');
+    if (id === 'PART') {
+      setSplits(
+        withAutoRemaining(
+          [
+            { method: 'CASH', amount: '' },
+            { method: 'UPI_GPAY', amount: '' },
+          ],
+          billTotal,
+        ),
+      );
+    }
+  };
 
   const submit = () => {
     setError('');
     if (isPart) {
-      if (Math.abs(splitSum - billTotal) > 0.05) {
+      const balanced = withAutoRemaining(splits, billTotal);
+      const parsed = balanced.map((row) => ({
+        method: row.method,
+        amount: money2(row.amount),
+      }));
+      if (parsed.some((row) => !(row.amount > 0))) {
+        setError('Enter an amount greater than 0 on the first part-payment line.');
+        return;
+      }
+      const sum = money2(parsed.reduce((s, row) => s + row.amount, 0));
+      if (Math.abs(sum - billTotal) > 0.05) {
         setError(`Part payment must add up to ₹${billTotal}`);
         return;
       }
       onConfirm?.({
         paymentMethod: 'PART',
-        paymentSplits: splits.map((row) => ({
-          method: row.method,
-          amount: money2(row.amount),
-        })),
+        paymentSplits: parsed,
       });
       return;
     }
@@ -125,7 +179,7 @@ export function EditPaymentModal({
                   key={id}
                   type="button"
                   disabled={busy}
-                  onClick={() => setMethod(id)}
+                  onClick={() => selectMethod(id)}
                   className={[
                     'flex min-h-11 min-w-0 items-center gap-2 rounded-2xl border px-3 py-2.5 text-left text-sm font-semibold transition',
                     selected
@@ -153,39 +207,57 @@ export function EditPaymentModal({
 
           {isPart ? (
             <div className="space-y-2 rounded-2xl border border-[var(--line)] p-3">
-              {splits.map((row, index) => (
-                <div key={index} className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-[1fr_6rem]">
-                  <select
-                    value={row.method}
-                    disabled={busy}
-                    onChange={(e) => {
-                      const next = [...splits];
-                      next[index] = { ...next[index], method: e.target.value };
-                      setSplits(next);
-                    }}
-                    className="min-w-0 rounded-xl border border-[var(--line)] px-2 py-2 text-sm"
+              <p className="text-[11px] text-[var(--muted)]">
+                Enter the first amount — remaining fills the last box automatically.
+                {Math.abs(splitSum - billTotal) <= 0.05 ? ' · Balanced' : ''}
+              </p>
+              {splits.map((row, index) => {
+                const isLast = index === splits.length - 1;
+                return (
+                  <div
+                    key={index}
+                    className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-[1fr_6rem]"
                   >
-                    {SINGLE.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={row.amount}
-                    disabled={busy}
-                    onChange={(e) => {
-                      const next = [...splits];
-                      next[index] = { ...next[index], amount: e.target.value };
-                      setSplits(next);
-                    }}
-                    className="min-w-0 rounded-xl border border-[var(--line)] px-2 py-2 text-sm"
-                  />
-                </div>
-              ))}
+                    <select
+                      value={row.method}
+                      disabled={busy}
+                      onChange={(e) => {
+                        const next = [...splits];
+                        next[index] = { ...next[index], method: e.target.value };
+                        setSplits(next);
+                      }}
+                      className="min-w-0 rounded-xl border border-[var(--line)] px-2 py-2 text-sm"
+                      aria-label={`Payment method line ${index + 1}`}
+                    >
+                      {SINGLE.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.amount}
+                      readOnly={isLast}
+                      disabled={busy}
+                      placeholder={isLast ? 'Remaining' : '₹'}
+                      onChange={(e) => {
+                        const next = splits.map((r, i) =>
+                          i === index ? { ...r, amount: e.target.value } : r,
+                        );
+                        setSplits(withAutoRemaining(next, billTotal, index));
+                      }}
+                      className={[
+                        'min-w-0 rounded-xl border border-[var(--line)] px-2 py-2 text-sm',
+                        isLast ? 'bg-[var(--surface)]' : 'bg-white',
+                      ].join(' ')}
+                      title={isLast ? 'Auto-calculated remaining' : undefined}
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
