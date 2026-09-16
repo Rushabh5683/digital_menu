@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { toPublicUploadUrl, toStoredUploadPath } from '../../middleware/upload.js';
 import { getAnalyticsOverview } from '../analytics/analytics.reports.js';
 import { getRestaurantInsights } from '../insights/insight.service.js';
 import {
@@ -100,7 +101,7 @@ export async function getAdminRestaurant(restaurantId) {
     email: restaurant.email,
     phone: restaurant.phone,
     address: restaurant.address,
-    logoUrl: restaurant.logoUrl,
+    logoUrl: toPublicUploadUrl(restaurant.logoUrl),
     brandTagline: restaurant.brandTagline ?? null,
     brandAccent: restaurant.brandAccent ?? null,
     qrCardTheme: normalizeQrCardTheme(restaurant.qrCardTheme),
@@ -197,7 +198,8 @@ export function validateAdminRestaurantProfile(body = {}) {
   }
 
   if (body.logoUrl !== undefined) {
-    data.logoUrl = optionalTrimmed(body.logoUrl, 1000);
+    const trimmed = optionalTrimmed(body.logoUrl, 1000);
+    data.logoUrl = trimmed ? toStoredUploadPath(trimmed) : null;
   }
 
   if (body.brandTagline !== undefined) {
@@ -482,7 +484,7 @@ export async function getAdminSetupStatus(restaurantId) {
       id: restaurant.id,
       name: restaurant.name,
       slug: restaurant.slug,
-      logoUrl: restaurant.logoUrl,
+      logoUrl: toPublicUploadUrl(restaurant.logoUrl),
     },
     steps,
     completedCount,

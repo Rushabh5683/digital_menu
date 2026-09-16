@@ -212,10 +212,12 @@ adminRouter.post(
       throw new AppError('Logo image is required', 400);
     }
 
-    const logoUrl = toPublicUploadUrl(`/uploads/logos/${req.file.filename}`);
+    const storedPath = `/uploads/logos/${req.file.filename}`;
+    const logoUrl = toPublicUploadUrl(storedPath);
     res.status(201).json({
       ok: true,
-      logoUrl,
+      logoUrl: storedPath,
+      publicUrl: logoUrl,
       file: {
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -372,10 +374,11 @@ adminRouter.post(
       throw new AppError('Dish image is required', 400);
     }
 
-    const imageUrl = toPublicUploadUrl(`/uploads/dishes/${req.file.filename}`);
+    const storedPath = `/uploads/dishes/${req.file.filename}`;
     res.status(201).json({
       ok: true,
-      imageUrl,
+      imageUrl: storedPath,
+      publicUrl: toPublicUploadUrl(storedPath),
       file: {
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,

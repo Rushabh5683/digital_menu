@@ -14,7 +14,7 @@ export function GuestStickyHeader({
 }) {
   const headerRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
-  const logoSrc = resolveMediaUrl(restaurant.logo || '');
+  const logoSrc = resolveMediaUrl(restaurant.logo || restaurant.logoUrl || '');
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -45,15 +45,15 @@ export function GuestStickyHeader({
     >
       <div className="mx-auto max-w-lg px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[var(--g-ink)] shadow-[var(--g-shadow)]">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-[var(--g-shadow)]">
             {logoSrc ? (
               <img
                 src={logoSrc}
                 alt=""
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
               />
             ) : (
-              <span className="text-sm font-bold text-[var(--g-accent)]">
+              <span className="text-sm font-bold text-[var(--g-ink)]">
                 {(restaurant.name || 'R').slice(0, 1)}
               </span>
             )}

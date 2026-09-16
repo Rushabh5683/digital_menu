@@ -23,6 +23,22 @@ export function toPublicUploadUrl(relativePath) {
   return `${base}${pathPart}`;
 }
 
+/** Persist only /uploads/... paths in the DB (strip absolute API hosts). */
+export function toStoredUploadPath(urlOrPath) {
+  const raw = String(urlOrPath || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('/uploads')) return raw;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.pathname.startsWith('/uploads')) {
+      return `${parsed.pathname}${parsed.search || ''}`;
+    }
+  } catch {
+    // not an absolute URL
+  }
+  return raw.startsWith('/') ? raw : raw;
+}
+
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 

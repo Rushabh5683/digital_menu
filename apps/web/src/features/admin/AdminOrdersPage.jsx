@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
+import { resolveMediaUrl } from '../../shared/lib/mediaUrl.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
@@ -385,9 +386,13 @@ export function AdminOrdersPage() {
               Live floor · Tables
             </p>
             <div className="mt-3 flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/10">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white p-1">
                 {restaurant?.logoUrl ? (
-                  <img src={restaurant.logoUrl} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={resolveMediaUrl(restaurant.logoUrl)}
+                    alt=""
+                    className="h-full w-full object-contain"
+                  />
                 ) : (
                   <UtensilsCrossed size={20} className="text-white/80" />
                 )}

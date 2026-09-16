@@ -1,15 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ImagePlus, Loader2, Trash2 } from 'lucide-react';
 import { api } from '../../../shared/api/client.js';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif';
-
-function resolvePreviewUrl(logoUrl) {
-  if (!logoUrl) return null;
-  if (/^https?:\/\//i.test(logoUrl) || logoUrl.startsWith('blob:')) return logoUrl;
-  return logoUrl;
-}
 
 export function LogoUploadField({
   value,
@@ -35,7 +30,7 @@ export function LogoUploadField({
     onUploadingChange?.(uploading);
   }, [uploading, onUploadingChange]);
 
-  const preview = localPreview || resolvePreviewUrl(value);
+  const preview = localPreview || resolveMediaUrl(value) || null;
 
   async function handleFile(file) {
     setUploadError(null);
@@ -60,10 +55,16 @@ export function LogoUploadField({
     try {
       const upload = uploadFn || ((fileToUpload) => api.uploadSuperLogo(fileToUpload));
       const result = await upload(file);
-      onChange(result.logoUrl);
+      const nextUrl = result.logoUrl || result.publicUrl || '';
+      onChange(nextUrl);
+      // Drop blob preview so we show the saved /uploads URL via resolveMediaUrl.
+      URL.revokeObjectURL(objectUrl);
+      setLocalPreview(null);
       setUploadError(null);
     } catch (err) {
-      onChange('');
+      URL.revokeObjectURL(objectUrl);
+      setLocalPreview(null);
+      // Keep previous logo value on failure — don't wipe branding.
       setUploadError(err.message || 'Upload failed');
     } finally {
       setUploading(false);
@@ -77,9 +78,13 @@ export function LogoUploadField({
       </span>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--line)] bg-white p-1.5">
           {preview ? (
-            <img src={preview} alt="Restaurant logo preview" className="h-full w-full object-cover" />
+            <img
+              src={preview}
+              alt="Restaurant logo preview"
+              className="h-full w-full object-contain"
+            />
           ) : (
             <ImagePlus size={22} className="text-[var(--muted)]" />
           )}
@@ -127,7 +132,9 @@ export function LogoUploadField({
               </button>
             ) : null}
           </div>
-          <p className="text-xs text-[var(--muted)]">JPG, PNG, WEBP, or GIF · max 5 MB</p>
+          <p className="text-xs text-[var(--muted)]">
+            JPG, PNG, WEBP, or GIF · large photos are compressed · click Save profile after upload
+          </p>
         </div>
       </div>
 

@@ -1,10 +1,13 @@
+import { toPublicUploadUrl } from '../../middleware/upload.js';
+
 export function serializeRestaurant(restaurant, { publicView = false } = {}) {
   const base = {
     id: restaurant.id,
     name: restaurant.name,
     slug: restaurant.slug,
     description: restaurant.description,
-    logo: restaurant.logoUrl,
+    logo: toPublicUploadUrl(restaurant.logoUrl),
+    logoUrl: toPublicUploadUrl(restaurant.logoUrl),
     status: restaurant.status ?? null,
   };
 
@@ -32,7 +35,8 @@ export function serializeRestaurantSummary(restaurant) {
     name: restaurant.name,
     slug: restaurant.slug,
     description: restaurant.description,
-    logo: restaurant.logoUrl,
+    logo: toPublicUploadUrl(restaurant.logoUrl),
+    logoUrl: toPublicUploadUrl(restaurant.logoUrl),
     brandTagline: restaurant.brandTagline ?? null,
     brandAccent: restaurant.brandAccent ?? null,
     address: restaurant.address ?? null,

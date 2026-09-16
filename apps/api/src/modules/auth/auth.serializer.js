@@ -1,3 +1,5 @@
+import { toPublicUploadUrl } from '../../middleware/upload.js';
+
 export function serializeAuthUser(user) {
   return {
     id: user.id,
@@ -11,7 +13,7 @@ export function serializeAuthUser(user) {
           id: user.restaurant.id,
           name: user.restaurant.name,
           slug: user.restaurant.slug,
-          logoUrl: user.restaurant.logoUrl ?? null,
+          logoUrl: toPublicUploadUrl(user.restaurant.logoUrl) ?? null,
           status: user.restaurant.status ?? null,
         }
       : null,

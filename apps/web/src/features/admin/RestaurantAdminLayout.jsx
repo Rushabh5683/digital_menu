@@ -22,6 +22,7 @@ import {
   Layers3,
 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
+import { resolveMediaUrl } from '../../shared/lib/mediaUrl.js';
 import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
@@ -204,9 +205,13 @@ export function RestaurantAdminLayout() {
                 {isCaptain ? 'Captain console' : 'Restaurant console'}
               </p>
               <div className="mt-3 flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white p-1">
                   {restaurant?.logoUrl ? (
-                    <img src={restaurant.logoUrl} alt="" className="h-full w-full object-cover" />
+                    <img
+                      src={resolveMediaUrl(restaurant.logoUrl)}
+                      alt=""
+                      className="h-full w-full object-contain"
+                    />
                   ) : (
                     <UtensilsCrossed size={18} className="text-white/70" />
                   )}

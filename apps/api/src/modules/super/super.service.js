@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { toPublicUploadUrl, toStoredUploadPath } from '../../middleware/upload.js';
 import { validateCuid, validateSlug } from '../../utils/validate.js';
 import { hashPassword } from '../auth/auth.service.js';
 import { UserRoles } from '../auth/roles.js';
@@ -109,7 +110,7 @@ export function serializeSuperRestaurant(restaurant) {
     email: restaurant.email,
     phone: restaurant.phone,
     address: restaurant.address,
-    logoUrl: restaurant.logoUrl,
+    logoUrl: toPublicUploadUrl(restaurant.logoUrl),
     status: restaurant.status,
     gstEnabled: Boolean(restaurant.gstEnabled),
     gstin: restaurant.gstin ?? null,
@@ -663,7 +664,8 @@ export function validateCreateRestaurantPayload(body = {}) {
   }
 
   const address = optionalString(body.address, 300);
-  const logoUrl = optionalString(body.logoUrl, 1000);
+  const logoRaw = optionalString(body.logoUrl, 1000);
+  const logoUrl = logoRaw ? toStoredUploadPath(logoRaw) : null;
 
   const adminName = typeof body.adminName === 'string' ? body.adminName.trim() : '';
   if (!adminName || adminName.length < 2) fields.adminName = 'Admin name is required';
@@ -748,7 +750,10 @@ export function validateUpdateRestaurantPayload(body = {}) {
   }
 
   if (body.address !== undefined) data.address = optionalString(body.address, 300);
-  if (body.logoUrl !== undefined) data.logoUrl = optionalString(body.logoUrl, 1000);
+  if (body.logoUrl !== undefined) {
+    const next = optionalString(body.logoUrl, 1000);
+    data.logoUrl = next ? toStoredUploadPath(next) : null;
+  }
 
   if (body.status !== undefined) {
     const next = String(body.status).trim().toUpperCase();
