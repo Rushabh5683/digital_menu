@@ -1,4 +1,8 @@
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
+
 export function RestaurantHeader({ restaurant, tableLabel, menuName }) {
+  const logoSrc = resolveMediaUrl(restaurant.logo || restaurant.logoUrl || '');
+
   return (
     <header className="guest-hero relative overflow-hidden text-white">
       <div
@@ -12,10 +16,10 @@ export function RestaurantHeader({ restaurant, tableLabel, menuName }) {
         }}
       />
 
-      {restaurant.logo ? (
+      {logoSrc ? (
         <div className="pointer-events-none absolute inset-0 opacity-[0.18]">
           <img
-            src={restaurant.logo}
+            src={logoSrc}
             alt=""
             className="h-full w-full scale-110 object-cover blur-[2px]"
           />
@@ -26,9 +30,9 @@ export function RestaurantHeader({ restaurant, tableLabel, menuName }) {
       <div className="relative mx-auto max-w-lg px-5 pb-14 pt-7 menu-fade-up">
         <div className="flex items-center justify-between gap-3">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm">
-            {restaurant.logo ? (
+            {logoSrc ? (
               <img
-                src={restaurant.logo}
+                src={logoSrc}
                 alt=""
                 className="h-full w-full object-cover"
               />

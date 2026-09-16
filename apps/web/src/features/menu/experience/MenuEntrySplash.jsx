@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronUp, Pause, Sparkles } from 'lucide-react';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 const SPLASH_MS = 4200;
 const EXIT_MS = 520;
@@ -93,7 +94,7 @@ export function MenuEntrySplash({
   const accentLine = restaurant?.brandTagline?.trim()
     ? `${tablePart} · ${restaurant.brandTagline.trim().toUpperCase()}`
     : tablePart;
-  const logoSrc = restaurant?.logo || restaurant?.logoUrl || null;
+  const logoSrc = resolveMediaUrl(restaurant?.logo || restaurant?.logoUrl || '') || null;
 
   const setHold = (value) => {
     if (exiting || timerDoneRef.current) return;

@@ -1,4 +1,5 @@
 import { ChevronDown, Info, MapPin, Sparkles, UtensilsCrossed } from 'lucide-react';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 import { getMenuStats } from '../lib/menuUtils.js';
 
 const DESC_LIMIT = 100;
@@ -25,6 +26,7 @@ export function GuestHero({
   onSelectCategory,
 }) {
   const { categoryCount, dishCount } = getMenuStats(categories);
+  const logoSrc = resolveMediaUrl(restaurant.logo || restaurant.logoUrl || '');
 
   const rawDescription = restaurant.description?.trim() || '';
   const fallbackTagline =
@@ -38,9 +40,9 @@ export function GuestHero({
       {/* Rich atmospheric layers */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="guest-hero-mesh absolute inset-0" aria-hidden />
-        {restaurant.logo ? (
+        {logoSrc ? (
           <img
-            src={restaurant.logo}
+            src={logoSrc}
             alt=""
             aria-hidden
             className="guest-hero-watermark absolute left-1/2 top-[42%] h-56 w-56 -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.14] sm:h-72 sm:w-72"
@@ -77,9 +79,9 @@ export function GuestHero({
           <div className="flex gap-4">
             <div className="guest-logo-frame relative flex h-[4.75rem] w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--g-accent)]/35 bg-white p-2.5 shadow-[0_0_30px_rgba(212,175,55,0.16)] sm:h-20 sm:w-20">
               <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-[var(--g-accent)]/10 to-transparent" />
-              {restaurant.logo ? (
+              {logoSrc ? (
                 <img
-                  src={restaurant.logo}
+                  src={logoSrc}
                   alt=""
                   className="relative h-full w-full object-contain"
                 />

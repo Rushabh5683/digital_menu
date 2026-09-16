@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Info, Search, SlidersHorizontal, X } from 'lucide-react';
+import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 export function GuestStickyHeader({
   restaurant,
@@ -13,6 +14,7 @@ export function GuestStickyHeader({
 }) {
   const headerRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
+  const logoSrc = resolveMediaUrl(restaurant.logo || '');
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -44,8 +46,12 @@ export function GuestStickyHeader({
       <div className="mx-auto max-w-lg px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[var(--g-ink)] shadow-[var(--g-shadow)]">
-            {restaurant.logo ? (
-              <img src={restaurant.logo} alt="" className="h-full w-full object-cover" />
+            {logoSrc ? (
+              <img
+                src={logoSrc}
+                alt=""
+                className="h-full w-full object-cover"
+              />
             ) : (
               <span className="text-sm font-bold text-[var(--g-accent)]">
                 {(restaurant.name || 'R').slice(0, 1)}
