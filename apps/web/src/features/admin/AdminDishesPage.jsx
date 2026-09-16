@@ -873,7 +873,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
               className="block w-full text-sm text-[var(--muted)] file:mr-3 file:rounded-xl file:border-0 file:bg-[var(--ink)] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
             />
             <p className="text-xs text-[var(--muted)]">
-              JPG, PNG, WEBP, or GIF · max 5 MB
+              JPG, PNG, WEBP, or GIF · large phone photos are compressed before upload
               {pendingFile
                 ? ' · Selected — uploads when you click Save changes'
                 : ''}

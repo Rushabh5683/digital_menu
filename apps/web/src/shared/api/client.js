@@ -1,3 +1,5 @@
+import { compressImageForUpload } from '../lib/compressImage.js';
+
 // Empty = same-origin (/api via Vite proxy in local, or reverse proxy in prod).
 // Staging split hosts: set VITE_API_BASE_URL=https://your-api.example.com
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -138,9 +140,10 @@ export const api = {
     return request('/api/admin/setup');
   },
 
-  uploadAdminLogo(file) {
+  async uploadAdminLogo(file) {
+    const compressed = await compressImageForUpload(file);
     const formData = new FormData();
-    formData.append('logo', file);
+    formData.append('logo', compressed);
 
     return request('/api/admin/uploads/logo', {
       method: 'POST',
@@ -385,9 +388,10 @@ export const api = {
     });
   },
 
-  uploadAdminDishImage(file) {
+  async uploadAdminDishImage(file) {
+    const compressed = await compressImageForUpload(file);
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('image', compressed);
     return request('/api/admin/uploads/dish', {
       method: 'POST',
       body: formData,
@@ -510,9 +514,10 @@ export const api = {
     });
   },
 
-  uploadSuperLogo(file) {
+  async uploadSuperLogo(file) {
+    const compressed = await compressImageForUpload(file);
     const formData = new FormData();
-    formData.append('logo', file);
+    formData.append('logo', compressed);
 
     return request('/api/superadmin/uploads/logo', {
       method: 'POST',
