@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
-    "start": "node src/index.js",
+    "start": "prisma migrate deploy && node src/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
@@ -29,9 +31,8 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.3.0",
+    "prisma": "^6.3.1",
     "qrcode": "^1.5.4"
   },
-  "devDependencies": {
-    "prisma": "^6.3.1"
-  }
+  "devDependencies": {}
 }
