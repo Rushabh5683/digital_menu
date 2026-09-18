@@ -137,7 +137,7 @@ function bytesToBase64(bytes) {
 
 /**
  * Build ESC/POS command bytes for a thermal bill.
- * Default 80mm (matches most restaurant receipt printers).
+ * Layout matches Farmers Kitchen / PetPooja-style 80mm sample.
  * @param {{ restaurant: object, order: object, paperWidthMm?: 58 | 80, cashierName?: string }} args
  * @returns {{ base64: string, cols: number, paperWidthMm: number } | null}
  */
@@ -160,10 +160,9 @@ export function buildThermalBillEscPos({
   const thanks = restaurant?.billThanksMessage || DEFAULT_THANKS;
   const cashier = String(cashierName || 'Staff').trim() || 'Staff';
 
-  const tableNo =
-    order.tableNumber != null
-      ? String(order.tableNumber).padStart(2, '0')
-      : order.tableLabel?.replace(/\D/g, '') || '-';
+  const dineIn =
+    (order.tableLabel && String(order.tableLabel).trim()) ||
+    (order.tableNumber != null ? String(order.tableNumber).padStart(2, '0') : '-');
   const billNo = formatOrderDisplayNumber(order.orderNumber);
   const createdAt = order.createdAt || order.placedAt || order.paidAt || new Date().toISOString();
   const items = Array.isArray(order.items) ? order.items : [];
@@ -175,6 +174,10 @@ export function buildThermalBillEscPos({
   const cgstAmount = Number(order.cgstAmount) || 0;
   const sgstAmount = Number(order.sgstAmount) || 0;
   const taxAmount = Number(order.taxAmount) || cgstAmount + sgstAmount;
+  const taxableBase =
+    Number(order.taxableAmount) ||
+    Number(order.taxableSubtotal) ||
+    Math.max(0, subtotal - (Number(order.discountAmount) || 0));
   const roundOff = Number(order.roundOffAmount) || 0;
   const grand = Number(order.total) || 0;
   const showTax = taxAmount > 0.001;
@@ -187,45 +190,74 @@ export function buildThermalBillEscPos({
   const chunks = [];
   const pushCmd = (...nums) => chunks.push(Uint8Array.from(nums));
   const pushText = (text) => chunks.push(encodeUtf8ToBytes(`${asciiSafe(text)}\n`));
+  const pushRaw = (text) => chunks.push(encodeUtf8ToBytes(asciiSafe(text)));
+  const boldOn = () => pushCmd(0x1b, 0x45, 0x01);
+  const boldOff = () => pushCmd(0x1b, 0x45, 0x00);
+  const alignLeft = () => pushCmd(0x1b, 0x61, 0x00);
+  const alignCenter = () => pushCmd(0x1b, 0x61, 0x01);
+  /** Thicker separator (bold dashes) like the sample. */
+  const pushBoldRule = () => {
+    boldOn();
+    pushText(rule);
+    boldOff();
+  };
+  /** Left text normal + right text bold on one line (for Dine In). */
+  const pushLeftRightBoldRight = (left, right) => {
+    const l = asciiSafe(left);
+    const r = asciiSafe(right);
+    const space = Math.max(1, cols - l.length - r.length);
+    boldOff();
+    pushRaw(`${l}${' '.repeat(space)}`);
+    boldOn();
+    pushText(r);
+    boldOff();
+  };
 
   // Init: Font A, zero margin, full 80mm printable width (576 dots)
   pushCmd(0x1b, 0x40); // ESC @
-  pushCmd(0x1b, 0x4d, 0x00); // ESC M 0 — Font A (12x24 → 48 cols on 80mm)
+  pushCmd(0x1b, 0x4d, 0x00); // ESC M 0 — Font A
   pushCmd(0x1d, 0x21, 0x00); // GS ! — normal size
   pushCmd(0x1d, 0x4c, 0x00, 0x00); // GS L — left margin 0
   pushCmd(0x1d, 0x57, 0x40, 0x02); // GS W — print area width 576 dots
 
-  // Header (centered)
-  pushCmd(0x1b, 0x61, 0x01);
-  pushCmd(0x1b, 0x45, 0x01);
+  // ——— Header: name + address + phones — all bold, centered ———
+  alignCenter();
+  boldOn();
   if (name.length <= Math.floor(cols / 2)) {
-    pushCmd(0x1d, 0x21, 0x11);
+    pushCmd(0x1d, 0x21, 0x11); // double width+height for name only
     pushText(name);
     pushCmd(0x1d, 0x21, 0x00);
   } else {
     for (const line of wrapText(name, cols)) pushText(line);
   }
-  pushCmd(0x1b, 0x45, 0x00);
   for (const line of wrapText(address, cols)) pushText(line);
-  if (phone) pushText(phone);
+  if (phone) {
+    for (const line of wrapText(phone, cols)) pushText(line);
+  }
+  boldOff();
 
-  // Body (left) — labels match Farmers Kitchen / PetPooja-style sample
-  pushCmd(0x1b, 0x61, 0x00);
-  pushText(rule);
-  pushText(`Name: ${repeat('_', Math.max(8, cols - 6))}`.slice(0, cols));
-  pushText(leftRight(`Date: ${formatBillDate(createdAt)}`, `Dine In: ${tableNo}`, cols));
-  pushText(leftRight(`Time: ${formatClock(createdAt)}`, `Bill No.: ${billNo}`, cols));
-  pushText(`Cashier: ${cashier}`.slice(0, cols));
+  // Thick line → Name: → thick line
+  alignLeft();
+  pushBoldRule();
+  pushText('Name:');
+  pushBoldRule();
+
+  // Date (normal) …… Dine In (bold)
+  // time (normal)
+  // Cashier (normal) … Bill No. (normal)
+  pushLeftRightBoldRight(`Date: ${formatBillDate(createdAt)}`, `Dine In: ${dineIn}`);
+  pushText(formatClock(createdAt));
+  pushText(leftRight(`Cashier: ${cashier}`, `Bill No.: ${billNo}`, cols));
   pushText(rule);
 
-  // Full 80mm column grid (48 chars)
+  // Columns: No. Item | Qty. | Price | Amount
   const amtW = 8;
   const priceW = 7;
   const qtyW = 5;
   const itemW = Math.max(10, cols - amtW - priceW - qtyW - 3);
 
   pushText(
-    `${'No.Item'.padEnd(itemW)} ${'Qty.'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amount'.padStart(amtW)}`,
+    `${'No. Item'.padEnd(itemW)} ${'Qty.'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amount'.padStart(amtW)}`,
   );
   pushText(rule);
 
@@ -250,35 +282,37 @@ export function buildThermalBillEscPos({
   pushText(leftRight(`Total Qty: ${totalQty}`, `Sub Total ${money(subtotal)}`, cols));
 
   if (showTax) {
-    const taxBase = money(subtotal);
+    const taxBase = money(taxableBase || subtotal);
     pushText(leftRight(`${taxBase}@ CGST ${cgstRate}%`, money(cgstAmount), cols));
     pushText(leftRight(`${taxBase}@ SGST ${sgstRate}%`, money(sgstAmount), cols));
   }
 
   pushText(rule);
   pushText(leftRight('Round off', roundLabel, cols));
-  pushCmd(0x1b, 0x45, 0x01);
+  boldOn();
   pushText(leftRight('Grand Total Rs', money(grand), cols));
-  pushCmd(0x1b, 0x45, 0x00);
+  boldOff();
   pushText(rule);
 
-  // Footer centered
-  pushCmd(0x1b, 0x61, 0x01);
-  if (fssai) for (const line of wrapText(`FSSAI Lic No. ${fssai}`, cols)) pushText(line);
-  if (gstin) for (const line of wrapText(`GST NO: ${gstin}`, cols)) pushText(line);
-
-  // Prefer sample-style two-line thanks so the last line is short and clear
+  // ——— Footer centered + bold: FSSAI, GST, thanks ———
+  alignCenter();
+  boldOn();
+  if (fssai) {
+    for (const line of wrapText(`FSSAI Lic No. ${fssai}`, cols)) pushText(line);
+  }
+  if (gstin) {
+    for (const line of wrapText(`GST NO: ${gstin}`, cols)) pushText(line);
+  }
   const thanksLines =
     /drive safe\.?\s*stay healthy\.?/i.test(thanks)
       ? ['Thanks for visiting us. Drive safe.', 'Stay healthy.']
       : wrapText(thanks, cols);
   for (const line of thanksLines) pushText(line);
+  boldOff();
 
-  // Extra blank lines + feed so cutter clears the last text (was clipping footer)
-  pushText('');
-  pushText('');
-  pushCmd(0x1b, 0x64, 0x0a); // ESC d 10 — feed 10 lines
-  pushCmd(0x1d, 0x56, 0x41, 0x30); // GS V A n — feed ~6mm then partial cut
+  // Minimal feed so cutter clears last line — no large blank tail
+  pushCmd(0x1b, 0x64, 0x04); // ESC d 4
+  pushCmd(0x1d, 0x56, 0x41, 0x10); // GS V A — small feed then partial cut
 
   let totalLen = 0;
   for (const part of chunks) totalLen += part.length;
@@ -294,9 +328,9 @@ export function buildThermalBillEscPos({
 
 /**
  * HTML fallback for browser print dialog (when QZ is unavailable).
- * Sized for 80mm thermal paper.
+ * Sized for 80mm — mirrors ESC/POS sample layout.
  */
-export function buildThermalBillHtml({ restaurant, order }) {
+export function buildThermalBillHtml({ restaurant, order, cashierName = 'Staff' }) {
   if (!order) return '';
 
   const name = restaurant?.name || 'Restaurant';
@@ -305,11 +339,11 @@ export function buildThermalBillHtml({ restaurant, order }) {
   const gstin = restaurant?.gstin || '';
   const fssai = restaurant?.fssaiLicense || '';
   const thanks = restaurant?.billThanksMessage || DEFAULT_THANKS;
+  const cashier = String(cashierName || 'Staff').trim() || 'Staff';
 
-  const tableNo =
-    order.tableNumber != null
-      ? String(order.tableNumber).padStart(2, '0')
-      : order.tableLabel?.replace(/\D/g, '') || '—';
+  const dineIn =
+    (order.tableLabel && String(order.tableLabel).trim()) ||
+    (order.tableNumber != null ? String(order.tableNumber).padStart(2, '0') : '—');
   const billNo = formatOrderDisplayNumber(order.orderNumber);
   const createdAt = order.createdAt || order.placedAt || new Date().toISOString();
   const items = order.items || [];
@@ -338,11 +372,20 @@ export function buildThermalBillHtml({ restaurant, order }) {
   const cgstAmount = Number(order.cgstAmount) || 0;
   const sgstAmount = Number(order.sgstAmount) || 0;
   const taxAmount = Number(order.taxAmount) || 0;
+  const taxableBase =
+    Number(order.taxableAmount) ||
+    Number(order.taxableSubtotal) ||
+    Math.max(0, subtotal - (Number(order.discountAmount) || 0));
   const roundOff = Number(order.roundOffAmount) || 0;
   const grand = Number(order.total) || 0;
   const showTax = taxAmount > 0;
   const roundLabel =
-    roundOff === 0 ? '0.00' : `${roundOff > 0 ? '+' : ''}${formatBillAmount(roundOff)}`;
+    roundOff === 0
+      ? '+0.00'
+      : `${roundOff > 0 ? '+' : '-'}${formatBillAmount(Math.abs(roundOff))}`;
+  const thanksHtml = /drive safe\.?\s*stay healthy\.?/i.test(thanks)
+    ? 'Thanks for visiting us. Drive safe.<br/>Stay healthy.'
+    : escapeHtml(thanks);
 
   return `<!doctype html>
 <html>
@@ -359,53 +402,63 @@ export function buildThermalBillHtml({ restaurant, order }) {
       max-width: 576px;
       font-family: "Courier New", Courier, monospace;
       font-size: 13px;
-      line-height: 1.25;
+      line-height: 1.2;
       color: #000;
       background: #fff;
     }
-    .receipt { width: 540px; margin: 0 auto; padding: 8px 8px 28px; }
+    .receipt { width: 540px; margin: 0 auto; padding: 4px 8px 10px; }
     .center { text-align: center; }
-    .title { font-size: 16px; font-weight: 700; text-transform: uppercase; }
-    .muted { font-size: 12px; }
-    .rule { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    .meta { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .meta td { vertical-align: top; padding: 1px 0; }
+    .bold { font-weight: 700; }
+    .title { font-size: 17px; font-weight: 700; text-transform: uppercase; }
+    .head-line { font-size: 12px; font-weight: 700; }
+    .rule { border: none; border-top: 2px solid #000; margin: 4px 0; }
+    .rule-thin { border: none; border-top: 1px solid #000; margin: 4px 0; }
+    .meta { width: 100%; border-collapse: collapse; font-size: 12px; font-weight: 400; }
+    .meta td { vertical-align: top; padding: 0; }
     .meta .r { text-align: right; }
+    .dine { font-weight: 700; }
     table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    table.items th, table.items td { padding: 2px 0; vertical-align: top; font-size: 12px; }
-    table.items th { font-size: 11px; border-bottom: 1px solid #000; text-align: left; }
+    table.items th, table.items td { padding: 1px 0; vertical-align: top; font-size: 12px; }
+    table.items th { font-size: 11px; text-align: left; }
     .c-no { width: 22px; }
     .c-item { width: auto; word-wrap: break-word; }
     .c-qty { width: 36px; text-align: center; }
     .c-price { width: 64px; text-align: right; }
     .c-amt { width: 72px; text-align: right; }
-    .totals { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+    .totals { width: 100%; border-collapse: collapse; font-size: 12px; }
     .totals td { padding: 1px 0; }
     .totals .l { text-align: left; }
     .totals .r { text-align: right; }
-    .grand { font-size: 14px; font-weight: 700; padding-top: 4px !important; }
-    .foot { margin-top: 8px; font-size: 12px; line-height: 1.35; padding-bottom: 12px; }
+    .grand { font-size: 14px; font-weight: 700; }
+    .foot { margin-top: 4px; font-size: 12px; font-weight: 700; line-height: 1.3; }
   </style>
 </head>
 <body>
   <div class="receipt">
     <div class="center title">${escapeHtml(name)}</div>
-    ${address ? `<div class="center muted" style="margin-top:3px">${escapeHtml(address)}</div>` : ''}
-    ${phone ? `<div class="center muted">${escapeHtml(phone)}</div>` : ''}
+    ${address ? `<div class="center head-line">${escapeHtml(address)}</div>` : ''}
+    ${phone ? `<div class="center head-line">${escapeHtml(phone)}</div>` : ''}
 
     <hr class="rule" />
-    <div class="muted">Name: ________________________________</div>
+    <div>Name:</div>
+    <hr class="rule" />
+
     <table class="meta">
       <tr>
         <td>Date: ${escapeHtml(formatBillDate(createdAt))}</td>
-        <td class="r">Dine In: ${escapeHtml(tableNo)}</td>
+        <td class="r dine">Dine In: ${escapeHtml(dineIn)}</td>
       </tr>
       <tr>
-        <td>Time: ${escapeHtml(formatClock(createdAt))}</td>
+        <td>${escapeHtml(formatClock(createdAt))}</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>Cashier: ${escapeHtml(cashier)}</td>
         <td class="r">Bill No.: ${escapeHtml(billNo)}</td>
       </tr>
     </table>
-    <hr class="rule" />
+
+    <hr class="rule-thin" />
 
     <table class="items">
       <thead>
@@ -422,27 +475,31 @@ export function buildThermalBillHtml({ restaurant, order }) {
       </tbody>
     </table>
 
-    <hr class="rule" />
-    <div class="muted">Total Qty: ${totalQty}</div>
+    <hr class="rule-thin" />
 
     <table class="totals">
       <tr>
-        <td class="l">Sub Total</td>
-        <td class="r">${escapeHtml(formatBillAmount(subtotal))}</td>
+        <td class="l">Total Qty: ${totalQty}</td>
+        <td class="r">Sub Total ${escapeHtml(formatBillAmount(subtotal))}</td>
       </tr>
       ${
         showTax
           ? `
       <tr>
-        <td class="l">${escapeHtml(formatBillAmount(subtotal))} @ CGST ${escapeHtml(String(cgstRate))}%</td>
+        <td class="l">${escapeHtml(formatBillAmount(taxableBase || subtotal))}@ CGST ${escapeHtml(String(cgstRate))}%</td>
         <td class="r">${escapeHtml(formatBillAmount(cgstAmount))}</td>
       </tr>
       <tr>
-        <td class="l">${escapeHtml(formatBillAmount(subtotal))} @ SGST ${escapeHtml(String(sgstRate))}%</td>
+        <td class="l">${escapeHtml(formatBillAmount(taxableBase || subtotal))}@ SGST ${escapeHtml(String(sgstRate))}%</td>
         <td class="r">${escapeHtml(formatBillAmount(sgstAmount))}</td>
       </tr>`
           : ''
       }
+    </table>
+
+    <hr class="rule-thin" />
+
+    <table class="totals">
       <tr>
         <td class="l">Round off</td>
         <td class="r">${escapeHtml(roundLabel)}</td>
@@ -453,10 +510,12 @@ export function buildThermalBillHtml({ restaurant, order }) {
       </tr>
     </table>
 
+    <hr class="rule-thin" />
+
     <div class="foot center">
-      ${fssai ? `<div>FSSAI Lic No.: ${escapeHtml(fssai)}</div>` : ''}
+      ${fssai ? `<div>FSSAI Lic No. ${escapeHtml(fssai)}</div>` : ''}
       ${gstin ? `<div>GST NO: ${escapeHtml(gstin)}</div>` : ''}
-      <div style="margin-top:6px">${escapeHtml(thanks)}</div>
+      <div>${thanksHtml}</div>
     </div>
   </div>
 </body>

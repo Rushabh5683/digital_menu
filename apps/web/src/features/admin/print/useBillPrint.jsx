@@ -47,8 +47,8 @@ export function useBillPrint() {
     await printRawEscPosWithQz(printerName, payload.base64);
   }, []);
 
-  const runBrowserFallback = useCallback(({ restaurant, order }) => {
-    const html = buildThermalBillHtml({ restaurant, order });
+  const runBrowserFallback = useCallback(({ restaurant, order, cashierName }) => {
+    const html = buildThermalBillHtml({ restaurant, order, cashierName });
     if (!html) throw new Error('Order has nothing to print');
     printHtmlViaIframe(html);
   }, []);
@@ -91,7 +91,7 @@ export function useBillPrint() {
       } catch (err) {
         if (isQzUnavailableError(err)) {
           try {
-            runBrowserFallback({ restaurant, order });
+            runBrowserFallback({ restaurant, order, cashierName });
             await finishOk();
             setError('QZ Tray offline — opened browser print instead');
             return { ok: true, mode: 'browser-fallback' };
