@@ -12,11 +12,12 @@ import {
 } from './qzPrinter.js';
 
 /**
- * Pick a printer (QZ Tray). Saves selection as default for next Print.
+ * Pick a printer (QZ Tray). Saves separately for bill (counter) vs KOT (kitchen).
  */
 export function PrinterSelectModal({
   open,
   busy = false,
+  kind = 'bill',
   onCancel,
   onConfirm,
 }) {
@@ -25,6 +26,8 @@ export function PrinterSelectModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [qzMissing, setQzMissing] = useState(false);
+
+  const isKot = kind === 'kot';
 
   useEffect(() => {
     if (!open) return undefined;
@@ -38,7 +41,7 @@ export function PrinterSelectModal({
         const list = await listQzPrinters();
         if (cancelled) return;
         setPrinters(list);
-        const saved = getSavedPrinter();
+        const saved = getSavedPrinter(kind);
         if (saved && list.includes(saved)) setSelected(saved);
         else if (list.length) setSelected(list[0]);
         else setSelected('');
@@ -62,7 +65,7 @@ export function PrinterSelectModal({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, kind]);
 
   if (!open) return null;
 
@@ -83,21 +86,24 @@ export function PrinterSelectModal({
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
-              Print bill
+              {isKot ? 'KOT print' : 'Bill print'}
             </p>
             <h2
               id="printer-select-title"
               className="mt-1 text-xl text-[var(--ink)]"
               style={{ fontFamily: 'var(--font-display)' }}
             >
-              Choose printer
+              {isKot ? 'Choose kitchen printer' : 'Choose bill printer'}
             </h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Saved as default for next time — no browser print preview.
+              {isKot
+                ? 'Saved as your kitchen / KOT printer for next time.'
+                : 'Saved as your counter / bill printer for next time.'}
             </p>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              If QZ asks for permission, tick <strong>Remember this decision</strong> then{' '}
-              <strong>Allow</strong> once. After that, prints stay silent.
+            <p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">
+              First time only — pick the printer once. Later {isKot ? 'KOT' : 'bill'} prints go
+              there automatically (separate from{' '}
+              {isKot ? 'bill' : 'KOT'} printer).
             </p>
           </div>
           <button
@@ -124,19 +130,20 @@ export function PrinterSelectModal({
             </a>
           ) : null}
 
-          <p className="text-[11px] leading-relaxed text-[var(--muted)]">
-            Still prompted every time? Install the site certificate once: download{' '}
-            <a
-              href={getQzOverrideCertUrl()}
-              download="override.crt"
-              className="font-semibold text-[var(--teal)] underline"
-            >
-              override.crt
-            </a>
-            , copy it into{' '}
-            <code className="rounded bg-black/[0.04] px-1">C:\Program Files\QZ Tray\</code>, then
-            restart QZ Tray.
-          </p>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950">
+            <p className="font-semibold">Stop the QZ popup permanently (one-time)</p>
+            <p className="mt-1">
+              If Allow greys out when Remember is ticked, install{' '}
+              <a
+                href={getQzOverrideCertUrl()}
+                download="override.crt"
+                className="font-semibold underline"
+              >
+                override.crt
+              </a>{' '}
+              via QZ Site Manager (or Run as admin), then restart QZ.
+            </p>
+          </div>
 
           {loading ? (
             <p className="inline-flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -182,12 +189,12 @@ export function PrinterSelectModal({
             className="flex-1 gap-1.5"
             disabled={busy || loading || !selected}
             onClick={() => {
-              saveDefaultPrinter(selected);
+              saveDefaultPrinter(selected, kind);
               onConfirm?.(selected);
             }}
           >
             {busy ? <LoaderCircle size={16} className="animate-spin" /> : <Printer size={16} />}
-            {busy ? 'Printing…' : 'Print'}
+            {busy ? 'Printing…' : isKot ? 'Print KOT' : 'Print bill'}
           </Button>
         </div>
       </div>

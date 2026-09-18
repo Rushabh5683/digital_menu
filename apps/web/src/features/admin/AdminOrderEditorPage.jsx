@@ -45,7 +45,7 @@ export function AdminOrderEditorPage() {
   const [addingDishId, setAddingDishId] = useState(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const { printBill, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
+  const { printBill, printKot, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
     useBillPrint();
 
   const orderQuery = useQuery({
@@ -183,6 +183,19 @@ export function AdminOrderEditorPage() {
     });
   };
 
+  const handleKotPrint = async () => {
+    const currentOrder = orderQuery.data;
+    const currentRestaurant = restaurantQuery.data;
+    if (!currentOrder) return;
+    setError(null);
+    clearPrintError();
+    await printKot({
+      restaurant: currentRestaurant,
+      order: currentOrder,
+      cashierName: user?.name || 'Staff',
+    });
+  };
+
   const completeMutation = useMutation({
     mutationFn: (payment) => {
       let businessDate;
@@ -313,6 +326,17 @@ export function AdminOrderEditorPage() {
             {saveFlash ? <Check size={16} /> : <Save size={16} />}
             {saveFlash ? 'Saved' : 'Save'}
           </Button>
+          {canEdit ? (
+            <Button
+              variant="secondary"
+              disabled={qzPrinting || items.length === 0}
+              onClick={handleKotPrint}
+              className="gap-1.5"
+            >
+              {qzPrinting ? <LoaderCircle size={16} className="animate-spin" /> : <Printer size={16} />}
+              KOT & Print
+            </Button>
+          ) : null}
           {canSettle ? (
             <>
               <Button
@@ -610,6 +634,17 @@ export function AdminOrderEditorPage() {
               {saveFlash ? <Check size={16} /> : <Save size={16} />}
               {saveFlash ? 'Saved' : 'Save'}
             </Button>
+            {canEdit ? (
+              <Button
+                variant="secondary"
+                disabled={qzPrinting || items.length === 0}
+                onClick={handleKotPrint}
+                className="min-w-0 flex-1 gap-1.5"
+              >
+                {qzPrinting ? <LoaderCircle size={16} className="animate-spin" /> : <Printer size={16} />}
+                KOT & Print
+              </Button>
+            ) : null}
             {canSettle ? (
               <>
                 <Button

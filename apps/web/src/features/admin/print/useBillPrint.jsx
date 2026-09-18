@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import {
   buildThermalBillEscPos,
   buildThermalBillHtml,
+  buildThermalKotEscPos,
+  buildThermalKotHtml,
   printHtmlViaIframe,
 } from '../orderBillPrint.js';
 import { BillPreviewModal } from './BillPreviewModal.jsx';
@@ -16,10 +18,7 @@ import {
 } from './qzPrinter.js';
 
 /**
- * Shared Print flow:
- * 1) ESC/POS raw via QZ (compact thermal) when QZ + printer available
- * 2) Browser print dialog fallback (HTML) if QZ is offline
- * Also: on-screen Preview (no paper) to check layout.
+ * Shared Print flow for guest bills and KOT tickets.
  */
 export function useBillPrint() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -47,21 +46,25 @@ export function useBillPrint() {
     }
   }, [printing, pickerOpen]);
 
-  const runEscPosPrint = useCallback(async (printerName, { restaurant, order, cashierName }) => {
-    const paperWidthMm = 80;
-    getSavedPaperWidthMm();
-    const payload = buildThermalBillEscPos({
-      restaurant,
-      order,
-      paperWidthMm,
-      cashierName,
-    });
-    if (!payload?.base64) throw new Error('Order has nothing to print');
-    await printRawEscPosWithQz(printerName, payload.base64);
-  }, []);
+  const runEscPosPrint = useCallback(
+    async (printerName, { restaurant, order, cashierName, kind = 'bill' }) => {
+      const paperWidthMm = 80;
+      getSavedPaperWidthMm();
+      const payload =
+        kind === 'kot'
+          ? buildThermalKotEscPos({ restaurant, order, paperWidthMm, cashierName })
+          : buildThermalBillEscPos({ restaurant, order, paperWidthMm, cashierName });
+      if (!payload?.base64) throw new Error('Order has nothing to print');
+      await printRawEscPosWithQz(printerName, payload.base64);
+    },
+    [],
+  );
 
-  const runBrowserFallback = useCallback(({ restaurant, order, cashierName }) => {
-    const html = buildThermalBillHtml({ restaurant, order, cashierName });
+  const runBrowserFallback = useCallback(({ restaurant, order, cashierName, kind = 'bill' }) => {
+    const html =
+      kind === 'kot'
+        ? buildThermalKotHtml({ restaurant, order, cashierName })
+        : buildThermalBillHtml({ restaurant, order, cashierName });
     if (!html) throw new Error('Order has nothing to print');
     printHtmlViaIframe(html);
   }, []);
@@ -83,17 +86,24 @@ export function useBillPrint() {
       setError('Order has nothing to preview');
       return { ok: false };
     }
-    setPending({ restaurant, order, cashierName });
+    setPending({ restaurant, order, cashierName, kind: 'bill' });
     onPrintedRef.current = onPrinted || null;
     setPreviewHtml(html);
     setPreviewOpen(true);
     return { ok: true };
   }, []);
 
-  const printBill = useCallback(
-    async ({ restaurant, order, cashierName, forcePicker = false, onPrinted } = {}) => {
+  const printDocument = useCallback(
+    async ({
+      restaurant,
+      order,
+      cashierName,
+      kind = 'bill',
+      forcePicker = false,
+      onPrinted,
+    } = {}) => {
       setError(null);
-      setPending({ restaurant, order, cashierName });
+      setPending({ restaurant, order, cashierName, kind });
       onPrintedRef.current = onPrinted || null;
 
       if (forcePicker) {
@@ -101,7 +111,7 @@ export function useBillPrint() {
         return { ok: false, needsPicker: true };
       }
 
-      const saved = getSavedPrinter();
+      const saved = getSavedPrinter(kind);
       if (!saved) {
         setPickerOpen(true);
         return { ok: false, needsPicker: true };
@@ -114,16 +124,16 @@ export function useBillPrint() {
           setPickerOpen(true);
           return { ok: false, needsPicker: true };
         }
-        await runEscPosPrint(saved, { restaurant, order, cashierName });
+        await runEscPosPrint(saved, { restaurant, order, cashierName, kind });
         await finishOk();
-        return { ok: true, mode: 'escpos' };
+        return { ok: true, mode: 'escpos', kind };
       } catch (err) {
         if (isQzUnavailableError(err)) {
           try {
-            runBrowserFallback({ restaurant, order, cashierName });
+            runBrowserFallback({ restaurant, order, cashierName, kind });
             await finishOk();
             setError('QZ Tray offline — opened browser print instead');
-            return { ok: true, mode: 'browser-fallback' };
+            return { ok: true, mode: 'browser-fallback', kind };
           } catch (fallbackErr) {
             setPickerOpen(true);
             setError(fallbackErr.message || err.message || 'Print failed');
@@ -140,13 +150,23 @@ export function useBillPrint() {
     [finishOk, runBrowserFallback, runEscPosPrint],
   );
 
+  const printBill = useCallback(
+    (args) => printDocument({ ...args, kind: 'bill' }),
+    [printDocument],
+  );
+
+  const printKot = useCallback(
+    (args) => printDocument({ ...args, kind: 'kot' }),
+    [printDocument],
+  );
+
   const confirmPrinter = useCallback(
     async (printerName) => {
       if (!pending) return;
       setPrinting(true);
       setError(null);
       try {
-        saveDefaultPrinter(printerName);
+        saveDefaultPrinter(printerName, pending.kind || 'bill');
         await runEscPosPrint(printerName, pending);
         await finishOk();
       } catch (err) {
@@ -172,19 +192,21 @@ export function useBillPrint() {
   const printFromPreview = useCallback(async () => {
     if (!pending) return;
     setPreviewOpen(false);
-    await printBill({
+    await printDocument({
       restaurant: pending.restaurant,
       order: pending.order,
       cashierName: pending.cashierName,
+      kind: pending.kind || 'bill',
       onPrinted: onPrintedRef.current,
     });
-  }, [pending, printBill]);
+  }, [pending, printDocument]);
 
   const printerModal = (
     <>
       <PrinterSelectModal
         open={pickerOpen}
         busy={printing}
+        kind={pending?.kind || 'bill'}
         onCancel={closePicker}
         onConfirm={confirmPrinter}
       />
@@ -200,6 +222,7 @@ export function useBillPrint() {
 
   return {
     printBill,
+    printKot,
     previewBill,
     printing,
     printError: error,

@@ -3,30 +3,46 @@ import { api } from '../../../shared/api/client.js';
 
 const qz = qzTray?.websocket ? qzTray : qzTray?.default || qzTray;
 
-const STORAGE_KEY = 'dm:default-printer';
+const STORAGE_KEY_BILL = 'dm:default-printer';
+const STORAGE_KEY_KOT = 'dm:kot-printer';
+/** @deprecated legacy key — treated as bill printer */
+const STORAGE_KEY_LEGACY = 'dm:default-printer';
 const PAPER_KEY = 'dm:thermal-paper-mm';
 const QZ_DOWNLOAD = 'https://qz.io/download/';
 
-export function getSavedPrinter() {
+function printerStorageKey(kind = 'bill') {
+  return kind === 'kot' ? STORAGE_KEY_KOT : STORAGE_KEY_BILL;
+}
+
+/** Saved printer for guest bills (counter) or KOT (kitchen). */
+export function getSavedPrinter(kind = 'bill') {
   try {
-    const name = window.localStorage.getItem(STORAGE_KEY);
-    return name && name.trim() ? name.trim() : null;
+    const key = printerStorageKey(kind);
+    const name = window.localStorage.getItem(key);
+    if (name && name.trim()) return name.trim();
+    // Older installs only had one printer key — use it for bills only
+    if (kind === 'bill') {
+      const legacy = window.localStorage.getItem(STORAGE_KEY_LEGACY);
+      return legacy && legacy.trim() ? legacy.trim() : null;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-export function saveDefaultPrinter(name) {
+export function saveDefaultPrinter(name, kind = 'bill') {
   try {
-    if (name) window.localStorage.setItem(STORAGE_KEY, String(name).trim());
-    else window.localStorage.removeItem(STORAGE_KEY);
+    const key = printerStorageKey(kind);
+    if (name) window.localStorage.setItem(key, String(name).trim());
+    else window.localStorage.removeItem(key);
   } catch {
     // ignore
   }
 }
 
-export function clearDefaultPrinter() {
-  saveDefaultPrinter('');
+export function clearDefaultPrinter(kind = 'bill') {
+  saveDefaultPrinter('', kind);
 }
 
 /**

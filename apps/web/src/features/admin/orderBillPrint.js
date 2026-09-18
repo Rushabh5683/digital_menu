@@ -373,6 +373,220 @@ export function buildThermalBillEscPos({
 }
 
 /**
+ * Kitchen Order Ticket (KOT) — same thermal style as the guest bill, without
+ * prices, tax, grand total, or FSSAI/GST/thanks footer.
+ */
+export function buildThermalKotEscPos({
+  restaurant,
+  order,
+  paperWidthMm = 80,
+  cashierName = 'Staff',
+} = {}) {
+  if (!order) return null;
+
+  const cols = paperWidthMm >= 80 ? THERMAL_COLS['80'] : THERMAL_COLS['58'];
+  const billRestaurant = resolveBillRestaurant(restaurant);
+  const { name } = billRestaurant;
+  const cashier = String(cashierName || 'Staff').trim() || 'Staff';
+  const dineIn = formatDineInLabel(order);
+  const billNo = formatOrderDisplayNumber(order.orderNumber);
+  const createdAt = order.createdAt || order.placedAt || order.paidAt || new Date().toISOString();
+  const items = Array.isArray(order.items) ? order.items : [];
+  const totalQty = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  const chunks = [];
+  const pushCmd = (...nums) => chunks.push(Uint8Array.from(nums));
+  const pushBytes = (bytes) =>
+    chunks.push(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
+  const pushText = (text) => chunks.push(encodeUtf8ToBytes(`${asciiSafe(text)}\n`));
+  const pushRaw = (text) => chunks.push(encodeUtf8ToBytes(asciiSafe(text)));
+  const boldOn = () => pushCmd(0x1b, 0x45, 0x01);
+  const boldOff = () => pushCmd(0x1b, 0x45, 0x00);
+  const alignLeft = () => pushCmd(0x1b, 0x61, 0x00);
+  const alignCenter = () => pushCmd(0x1b, 0x61, 0x01);
+
+  const pushSolidRule = (weight = 'thin') => {
+    const nDots = cols * 12;
+    const nL = nDots & 0xff;
+    const nH = (nDots >> 8) & 0xff;
+    const fill = weight === 'medium' ? 0x18 : 0x08;
+    pushCmd(0x1b, 0x2a, 0x00, nL, nH);
+    pushBytes(new Uint8Array(nDots).fill(fill));
+    pushCmd(0x0a);
+  };
+
+  const pushLeftRightBoldRight = (left, right) => {
+    const l = asciiSafe(left);
+    const r = asciiSafe(right);
+    const space = Math.max(1, cols - l.length - r.length);
+    boldOff();
+    pushRaw(`${l}${' '.repeat(space)}`);
+    boldOn();
+    pushText(r);
+    boldOff();
+  };
+
+  pushCmd(0x1b, 0x40);
+  pushCmd(0x1b, 0x4d, 0x00);
+  pushCmd(0x1d, 0x21, 0x00);
+  pushCmd(0x1d, 0x4c, 0x00, 0x00);
+  pushCmd(0x1d, 0x57, 0x40, 0x02);
+
+  // Header: restaurant + KOT
+  alignCenter();
+  boldOn();
+  if (name.length <= Math.floor(cols / 2)) {
+    pushCmd(0x1d, 0x21, 0x11);
+    pushText(name);
+    pushCmd(0x1d, 0x21, 0x00);
+  } else {
+    for (const line of wrapText(name, cols)) pushText(line);
+  }
+  pushCmd(0x1d, 0x21, 0x01); // double height
+  pushText('KOT');
+  pushCmd(0x1d, 0x21, 0x00);
+  boldOff();
+
+  alignLeft();
+  pushSolidRule('medium');
+  pushLeftRightBoldRight(`Date: ${formatBillDate(createdAt)}`, `Dine In: ${dineIn}`);
+  pushText(formatClock(createdAt));
+  pushText(leftRight(`Cashier: ${cashier}`, `Bill No.: ${billNo}`, cols));
+  pushSolidRule('thin');
+
+  // Kitchen needs item + qty only (no price / amount)
+  const qtyW = 5;
+  const itemW = Math.max(12, cols - qtyW - 1);
+
+  pushText(`${'No.Item'.padEnd(itemW)} ${centerPad('Qty.', qtyW)}`);
+  pushSolidRule('thin');
+
+  items.forEach((item, index) => {
+    const qty = Number(item.quantity) || 0;
+    const prefix = `${index + 1} `;
+    const dishName = String(item.dishNameSnapshot || item.dishName || 'Item');
+    const nameLines = wrapText(dishName, Math.max(4, itemW - prefix.length));
+    const first = `${prefix}${nameLines[0] || ''}`.padEnd(itemW).slice(0, itemW);
+    pushText(`${first} ${centerPad(String(qty), qtyW)}`);
+    const indent = ' '.repeat(prefix.length);
+    for (let i = 1; i < nameLines.length; i += 1) {
+      pushText(`${indent}${nameLines[i]}`.slice(0, cols));
+    }
+  });
+
+  if (!items.length) pushText('No items');
+
+  pushSolidRule('thin');
+  boldOn();
+  pushText(`Total Qty: ${totalQty}`);
+  boldOff();
+
+  pushCmd(0x1b, 0x64, 0x04);
+  pushCmd(0x1d, 0x56, 0x41, 0x10);
+
+  let totalLen = 0;
+  for (const part of chunks) totalLen += part.length;
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const part of chunks) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+
+  return { base64: bytesToBase64(out), cols, paperWidthMm };
+}
+
+/** HTML preview / browser fallback for KOT. */
+export function buildThermalKotHtml({ restaurant, order, cashierName = 'Staff' }) {
+  if (!order) return '';
+
+  const { name } = resolveBillRestaurant(restaurant);
+  const cashier = String(cashierName || 'Staff').trim() || 'Staff';
+  const dineIn = formatDineInLabel(order);
+  const billNo = formatOrderDisplayNumber(order.orderNumber);
+  const createdAt = order.createdAt || order.placedAt || new Date().toISOString();
+  const items = order.items || [];
+  const totalQty = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  const rows = items
+    .map((item, index) => {
+      const qty = Number(item.quantity) || 0;
+      const title = String(item.dishNameSnapshot || item.dishName || 'Item');
+      return `
+      <tr>
+        <td class="c-no">${index + 1}</td>
+        <td class="c-item">${escapeHtml(title)}</td>
+        <td class="c-qty">${qty}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KOT #${escapeHtml(billNo)}</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 576px; max-width: 576px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 13px; line-height: 1.15; color: #000; background: #fff;
+    }
+    .receipt { width: 540px; margin: 0 auto; padding: 4px 8px 8px; }
+    .center { text-align: center; }
+    .title { font-size: 18px; font-weight: 700; text-transform: uppercase; }
+    .kot { font-size: 20px; font-weight: 700; margin-top: 2px; letter-spacing: 0.12em; }
+    .rule { border: none; border-top: 1.5px solid #000; margin: 3px 0; }
+    .rule-thin { border: none; border-top: 1px solid #000; margin: 3px 0; }
+    .meta { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .meta td { vertical-align: top; padding: 0; }
+    .meta .r { text-align: right; }
+    .dine { font-weight: 700; }
+    table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    table.items th, table.items td { padding: 1px 0; vertical-align: top; font-size: 12px; }
+    .c-no { width: 22px; }
+    .c-item { width: auto; word-wrap: break-word; }
+    .c-qty { width: 48px; text-align: center; }
+    .total { font-weight: 700; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="center title">${escapeHtml(name)}</div>
+    <div class="center kot">KOT</div>
+    <hr class="rule" />
+    <table class="meta">
+      <tr>
+        <td>Date: ${escapeHtml(formatBillDate(createdAt))}</td>
+        <td class="r dine">Dine In: ${escapeHtml(dineIn)}</td>
+      </tr>
+      <tr><td>${escapeHtml(formatClock(createdAt))}</td><td></td></tr>
+      <tr>
+        <td>Cashier: ${escapeHtml(cashier)}</td>
+        <td class="r">Bill No.: ${escapeHtml(billNo)}</td>
+      </tr>
+    </table>
+    <hr class="rule-thin" />
+    <table class="items">
+      <thead>
+        <tr>
+          <th class="c-no">No.</th>
+          <th class="c-item">Item</th>
+          <th class="c-qty">Qty.</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="3">No items</td></tr>'}</tbody>
+    </table>
+    <hr class="rule-thin" />
+    <div class="total">Total Qty: ${totalQty}</div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * HTML fallback for browser print dialog (when QZ is unavailable).
  * Sized for 80mm — mirrors ESC/POS sample layout.
  */
