@@ -159,6 +159,7 @@ export function AdminOrderEditorPage() {
     await printBill({
       restaurant: currentRestaurant,
       order: currentOrder,
+      cashierName: user?.name || 'Staff',
       onPrinted: async () => {
         await printMutation.mutateAsync();
       },

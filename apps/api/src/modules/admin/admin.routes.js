@@ -73,6 +73,7 @@ import {
 } from './admin.qr.service.js';
 import { getAdminSalesReport } from './admin.reports.service.js';
 import { closeDayEnd, getDayEndStatus, unlockDayEnd } from './admin.dayend.service.js';
+import { getQzCertificate, signQzRequest } from './admin.qz.service.js';
 
 export const adminRouter = Router();
 
@@ -645,5 +646,29 @@ adminRouter.post(
   asyncHandler(async (req, res) => {
     const result = await generateAdminTableQr(req.restaurantId, req.params.tableId);
     res.json(result);
+  }),
+);
+
+/** Public cert for QZ Tray silent printing (staff session required). */
+adminRouter.get(
+  '/qz/certificate',
+  asyncHandler(async (_req, res) => {
+    const certificate = getQzCertificate();
+    res.type('text/plain').send(certificate);
+  }),
+);
+
+/** Sign each QZ privileged call so Tray can remember Allow and stop prompting. */
+adminRouter.post(
+  '/qz/sign',
+  asyncHandler(async (req, res) => {
+    const requestPayload =
+      typeof req.body?.request === 'string'
+        ? req.body.request
+        : typeof req.query?.request === 'string'
+          ? req.query.request
+          : '';
+    const signature = signQzRequest(requestPayload);
+    res.type('text/plain').send(signature);
   }),
 );

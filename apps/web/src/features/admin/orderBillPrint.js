@@ -1,4 +1,4 @@
-/** Shared bill helpers + ESC/POS thermal receipt (default 58mm) + HTML browser fallback. */
+/** Shared bill helpers + ESC/POS thermal receipt (default 80mm) + HTML browser fallback. */
 
 export function formatMoney(value) {
   const n = Number(value || 0);
@@ -56,10 +56,10 @@ function escapeHtml(value) {
 
 const DEFAULT_THANKS = 'Thanks for visiting us. Drive safe. Stay healthy.';
 
-/** 58mm ≈ 32 cols; 80mm ≈ 42 cols (Epson/Star common widths). */
+/** 58mm ≈ 32 cols; 80mm ≈ 48 cols (common Indian POS / Epson). */
 export const THERMAL_COLS = {
   '58': 32,
-  '80': 42,
+  '80': 48,
 };
 
 function asciiSafe(value) {
@@ -136,11 +136,17 @@ function bytesToBase64(bytes) {
 }
 
 /**
- * Build ESC/POS command bytes for a compact thermal bill.
- * @param {{ restaurant: object, order: object, paperWidthMm?: 58 | 80 }} args
- * @returns {{ base64: string, cols: number } | null}
+ * Build ESC/POS command bytes for a thermal bill.
+ * Default 80mm (matches most restaurant receipt printers).
+ * @param {{ restaurant: object, order: object, paperWidthMm?: 58 | 80, cashierName?: string }} args
+ * @returns {{ base64: string, cols: number, paperWidthMm: number } | null}
  */
-export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } = {}) {
+export function buildThermalBillEscPos({
+  restaurant,
+  order,
+  paperWidthMm = 80,
+  cashierName = 'Staff',
+} = {}) {
   if (!order) return null;
 
   const cols = paperWidthMm >= 80 ? THERMAL_COLS['80'] : THERMAL_COLS['58'];
@@ -152,6 +158,7 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
   const gstin = restaurant?.gstin || '';
   const fssai = restaurant?.fssaiLicense || '';
   const thanks = restaurant?.billThanksMessage || DEFAULT_THANKS;
+  const cashier = String(cashierName || 'Staff').trim() || 'Staff';
 
   const tableNo =
     order.tableNumber != null
@@ -172,16 +179,25 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
   const grand = Number(order.total) || 0;
   const showTax = taxAmount > 0.001;
   const roundLabel =
-    roundOff === 0 ? '0.00' : `${roundOff > 0 ? '+' : '-'}${formatBillAmount(Math.abs(roundOff))}`;
+    roundOff === 0
+      ? '+0.00'
+      : `${roundOff > 0 ? '+' : '-'}${formatBillAmount(Math.abs(roundOff)).replace(/,/g, '')}`;
+  const money = (v) => formatBillAmount(v).replace(/,/g, '');
 
   const chunks = [];
   const pushCmd = (...nums) => chunks.push(Uint8Array.from(nums));
   const pushText = (text) => chunks.push(encodeUtf8ToBytes(`${asciiSafe(text)}\n`));
 
-  pushCmd(0x1b, 0x40); // ESC @ init
-  pushCmd(0x1b, 0x61, 0x01); // center
-  pushCmd(0x1b, 0x45, 0x01); // bold on
-  // Double-size only when the name fits (~half of columns).
+  // Init: Font A, zero margin, full 80mm printable width (576 dots)
+  pushCmd(0x1b, 0x40); // ESC @
+  pushCmd(0x1b, 0x4d, 0x00); // ESC M 0 — Font A (12x24 → 48 cols on 80mm)
+  pushCmd(0x1d, 0x21, 0x00); // GS ! — normal size
+  pushCmd(0x1d, 0x4c, 0x00, 0x00); // GS L — left margin 0
+  pushCmd(0x1d, 0x57, 0x40, 0x02); // GS W — print area width 576 dots
+
+  // Header (centered)
+  pushCmd(0x1b, 0x61, 0x01);
+  pushCmd(0x1b, 0x45, 0x01);
   if (name.length <= Math.floor(cols / 2)) {
     pushCmd(0x1d, 0x21, 0x11);
     pushText(name);
@@ -189,25 +205,27 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
   } else {
     for (const line of wrapText(name, cols)) pushText(line);
   }
-  pushCmd(0x1b, 0x45, 0x00); // bold off
-
+  pushCmd(0x1b, 0x45, 0x00);
   for (const line of wrapText(address, cols)) pushText(line);
-  if (phone) pushText(`Ph: ${phone}`);
+  if (phone) pushText(phone);
 
-  pushCmd(0x1b, 0x61, 0x00); // left
+  // Body (left) — labels match Farmers Kitchen / PetPooja-style sample
+  pushCmd(0x1b, 0x61, 0x00);
   pushText(rule);
-  pushText('Name: ____________________'.slice(0, cols));
-  pushText(leftRight(`Date: ${formatBillDate(createdAt)}`, `Dine: ${tableNo}`, cols));
-  pushText(leftRight(`Time: ${formatClock(createdAt)}`, `Bill: ${billNo}`, cols));
+  pushText(`Name: ${repeat('_', Math.max(8, cols - 6))}`.slice(0, cols));
+  pushText(leftRight(`Date: ${formatBillDate(createdAt)}`, `Dine In: ${tableNo}`, cols));
+  pushText(leftRight(`Time: ${formatClock(createdAt)}`, `Bill No.: ${billNo}`, cols));
+  pushText(`Cashier: ${cashier}`.slice(0, cols));
   pushText(rule);
 
-  const amtW = 7;
-  const priceW = 6;
-  const qtyW = 3;
-  const itemW = Math.max(8, cols - amtW - priceW - qtyW - 3);
+  // Full 80mm column grid (48 chars)
+  const amtW = 8;
+  const priceW = 7;
+  const qtyW = 5;
+  const itemW = Math.max(10, cols - amtW - priceW - qtyW - 3);
 
   pushText(
-    `${'Item'.padEnd(itemW)} ${'Qty'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amt'.padStart(amtW)}`,
+    `${'No.Item'.padEnd(itemW)} ${'Qty.'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amount'.padStart(amtW)}`,
   );
   pushText(rule);
 
@@ -215,13 +233,12 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
     const qty = Number(item.quantity) || 0;
     const price = Number(item.priceSnapshot) || 0;
     const amount = Number(item.subtotal) || qty * price;
-    const title = `${index + 1}. ${item.dishNameSnapshot || item.dishName || 'Item'}`;
+    const title = `${index + 1} ${item.dishNameSnapshot || item.dishName || 'Item'}`;
     const wrapped = wrapText(title, itemW);
-    const first = wrapped[0] || `${index + 1}.`;
-    const qtyStr = String(qty).padStart(qtyW);
-    const priceStr = formatBillAmount(price).replace(/,/g, '').padStart(priceW);
-    const amtStr = formatBillAmount(amount).replace(/,/g, '').padStart(amtW);
-    pushText(`${first.padEnd(itemW)} ${qtyStr} ${priceStr} ${amtStr}`);
+    const first = (wrapped[0] || `${index + 1}`).padEnd(itemW).slice(0, itemW);
+    pushText(
+      `${first} ${String(qty).padStart(qtyW)} ${money(price).padStart(priceW)} ${money(amount).padStart(amtW)}`,
+    );
     for (let i = 1; i < wrapped.length; i += 1) {
       pushText(wrapped[i].padEnd(itemW).slice(0, cols));
     }
@@ -230,40 +247,38 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
   if (!items.length) pushText('No items');
 
   pushText(rule);
-  pushText(leftRight(`Total Qty: ${totalQty}`, `Sub ${formatBillAmount(subtotal).replace(/,/g, '')}`, cols));
+  pushText(leftRight(`Total Qty: ${totalQty}`, `Sub Total ${money(subtotal)}`, cols));
 
   if (showTax) {
-    pushText(
-      leftRight(
-        `${formatBillAmount(subtotal).replace(/,/g, '')}@CGST ${cgstRate}%`,
-        formatBillAmount(cgstAmount).replace(/,/g, ''),
-        cols,
-      ),
-    );
-    pushText(
-      leftRight(
-        `${formatBillAmount(subtotal).replace(/,/g, '')}@SGST ${sgstRate}%`,
-        formatBillAmount(sgstAmount).replace(/,/g, ''),
-        cols,
-      ),
-    );
+    const taxBase = money(subtotal);
+    pushText(leftRight(`${taxBase}@ CGST ${cgstRate}%`, money(cgstAmount), cols));
+    pushText(leftRight(`${taxBase}@ SGST ${sgstRate}%`, money(sgstAmount), cols));
   }
 
-  pushText(leftRight('Round off', roundLabel.replace(/,/g, ''), cols));
+  pushText(rule);
+  pushText(leftRight('Round off', roundLabel, cols));
   pushCmd(0x1b, 0x45, 0x01);
-  pushText(leftRight('TOTAL Rs', formatBillAmount(grand).replace(/,/g, ''), cols));
+  pushText(leftRight('Grand Total Rs', money(grand), cols));
   pushCmd(0x1b, 0x45, 0x00);
   pushText(rule);
 
-  pushCmd(0x1b, 0x61, 0x01); // center footer
-  if (fssai) for (const line of wrapText(`FSSAI: ${fssai}`, cols)) pushText(line);
-  if (gstin) for (const line of wrapText(`GSTIN: ${gstin}`, cols)) pushText(line);
-  for (const line of wrapText(thanks, cols)) pushText(line);
-  pushText('');
-  pushText('');
+  // Footer centered
+  pushCmd(0x1b, 0x61, 0x01);
+  if (fssai) for (const line of wrapText(`FSSAI Lic No. ${fssai}`, cols)) pushText(line);
+  if (gstin) for (const line of wrapText(`GST NO: ${gstin}`, cols)) pushText(line);
 
-  // Partial cut (ignored if unsupported)
-  pushCmd(0x1d, 0x56, 0x01);
+  // Prefer sample-style two-line thanks so the last line is short and clear
+  const thanksLines =
+    /drive safe\.?\s*stay healthy\.?/i.test(thanks)
+      ? ['Thanks for visiting us. Drive safe.', 'Stay healthy.']
+      : wrapText(thanks, cols);
+  for (const line of thanksLines) pushText(line);
+
+  // Extra blank lines + feed so cutter clears the last text (was clipping footer)
+  pushText('');
+  pushText('');
+  pushCmd(0x1b, 0x64, 0x0a); // ESC d 10 — feed 10 lines
+  pushCmd(0x1d, 0x56, 0x41, 0x30); // GS V A n — feed ~6mm then partial cut
 
   let totalLen = 0;
   for (const part of chunks) totalLen += part.length;
@@ -279,7 +294,7 @@ export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } 
 
 /**
  * HTML fallback for browser print dialog (when QZ is unavailable).
- * Compact pixel width aimed at 58mm thermal preview.
+ * Sized for 80mm thermal paper.
  */
 export function buildThermalBillHtml({ restaurant, order }) {
   if (!order) return '';
@@ -335,51 +350,51 @@ export function buildThermalBillHtml({ restaurant, order }) {
   <meta charset="utf-8" />
   <title>Bill #${escapeHtml(billNo)}</title>
   <style>
-    @page { size: 58mm auto; margin: 0; }
+    @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
-      width: 384px;
-      max-width: 384px;
+      width: 576px;
+      max-width: 576px;
       font-family: "Courier New", Courier, monospace;
-      font-size: 12px;
+      font-size: 13px;
       line-height: 1.25;
       color: #000;
       background: #fff;
     }
-    .receipt { width: 360px; margin: 0 auto; padding: 8px 6px 16px; }
+    .receipt { width: 540px; margin: 0 auto; padding: 8px 8px 28px; }
     .center { text-align: center; }
-    .title { font-size: 15px; font-weight: 700; text-transform: uppercase; }
-    .muted { font-size: 11px; }
+    .title { font-size: 16px; font-weight: 700; text-transform: uppercase; }
+    .muted { font-size: 12px; }
     .rule { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    .meta { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .meta { width: 100%; border-collapse: collapse; font-size: 12px; }
     .meta td { vertical-align: top; padding: 1px 0; }
     .meta .r { text-align: right; }
     table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    table.items th, table.items td { padding: 2px 0; vertical-align: top; font-size: 11px; }
-    table.items th { font-size: 10px; border-bottom: 1px solid #000; text-align: left; }
-    .c-no { width: 18px; }
+    table.items th, table.items td { padding: 2px 0; vertical-align: top; font-size: 12px; }
+    table.items th { font-size: 11px; border-bottom: 1px solid #000; text-align: left; }
+    .c-no { width: 22px; }
     .c-item { width: auto; word-wrap: break-word; }
-    .c-qty { width: 28px; text-align: center; }
-    .c-price { width: 54px; text-align: right; }
-    .c-amt { width: 58px; text-align: right; }
-    .totals { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+    .c-qty { width: 36px; text-align: center; }
+    .c-price { width: 64px; text-align: right; }
+    .c-amt { width: 72px; text-align: right; }
+    .totals { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
     .totals td { padding: 1px 0; }
     .totals .l { text-align: left; }
     .totals .r { text-align: right; }
-    .grand { font-size: 13px; font-weight: 700; padding-top: 4px !important; }
-    .foot { margin-top: 8px; font-size: 11px; line-height: 1.35; }
+    .grand { font-size: 14px; font-weight: 700; padding-top: 4px !important; }
+    .foot { margin-top: 8px; font-size: 12px; line-height: 1.35; padding-bottom: 12px; }
   </style>
 </head>
 <body>
   <div class="receipt">
     <div class="center title">${escapeHtml(name)}</div>
     ${address ? `<div class="center muted" style="margin-top:3px">${escapeHtml(address)}</div>` : ''}
-    ${phone ? `<div class="center muted">Ph: ${escapeHtml(phone)}</div>` : ''}
+    ${phone ? `<div class="center muted">${escapeHtml(phone)}</div>` : ''}
 
     <hr class="rule" />
-    <div class="muted">Name: ____________________</div>
+    <div class="muted">Name: ________________________________</div>
     <table class="meta">
       <tr>
         <td>Date: ${escapeHtml(formatBillDate(createdAt))}</td>
@@ -397,7 +412,7 @@ export function buildThermalBillHtml({ restaurant, order }) {
         <tr>
           <th class="c-no">No.</th>
           <th class="c-item">Item</th>
-          <th class="c-qty">Qty</th>
+          <th class="c-qty">Qty.</th>
           <th class="c-price">Price</th>
           <th class="c-amt">Amount</th>
         </tr>

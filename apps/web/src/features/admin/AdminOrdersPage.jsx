@@ -331,6 +331,7 @@ export function AdminOrdersPage() {
     await printBill({
       restaurant,
       order,
+      cashierName: user?.name || 'Staff',
       onPrinted: async () => {
         await printMutation.mutateAsync(order);
       },
@@ -512,7 +513,7 @@ export function AdminOrdersPage() {
           </p>
         </div>
       ) : (
-        <div className="grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {floorTiles.map(({ table, order, openTicket }) => {
             const flashing =
               flashTableKeys.has(table.id) || flashTableKeys.has(`n-${table.tableNumber}`);
@@ -638,37 +639,37 @@ function TableFloorTile({
   return (
     <article
       className={[
-        'relative flex min-h-[11.5rem] min-w-0 flex-col overflow-hidden rounded-2xl border p-3.5 shadow-[0_12px_28px_-22px_rgba(15,31,28,0.45)] transition',
+        'relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border p-2.5 shadow-[0_10px_22px_-20px_rgba(15,31,28,0.45)] transition sm:p-3',
         shell,
         flashing ? 'ops-card-flash' : '',
         opening ? 'opacity-70' : '',
       ].join(' ')}
     >
-      {topBar ? <div className={`absolute inset-x-0 top-0 h-1 ${topBar}`} /> : null}
+      {topBar ? <div className={`absolute inset-x-0 top-0 h-0.5 ${topBar}`} /> : null}
 
-      <div className="flex min-w-0 items-start justify-between gap-2">
+      <div className="flex min-w-0 items-start justify-between gap-1.5">
         <div className="min-w-0">
           <p
-            className="truncate text-2xl tracking-tight text-[var(--ink)]"
+            className="truncate text-lg leading-tight tracking-tight text-[var(--ink)] sm:text-xl"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             {label}
           </p>
-          <p className={['mt-1 text-[10px] font-bold uppercase tracking-[0.14em]', statusTone].join(' ')}>
+          <p className={['mt-0.5 text-[9px] font-bold uppercase tracking-[0.12em]', statusTone].join(' ')}>
             {statusLabel}
           </p>
         </div>
         {order ? (
           <span
             className={[
-              'max-w-[45%] shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white',
+              'max-w-[42%] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white',
               state === 'billed' ? 'bg-[var(--teal)]' : 'bg-[var(--ink)]',
             ].join(' ')}
           >
             #{displayNo}
           </span>
         ) : (
-          <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+          <span className="shrink-0 rounded-full bg-black/[0.06] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--muted)]">
             Idle
           </span>
         )}
@@ -679,39 +680,39 @@ function TableFloorTile({
           <button
             type="button"
             onClick={onOpen}
-            className="mt-3 min-w-0 flex-1 space-y-1 text-left"
+            className="mt-2 min-w-0 flex-1 space-y-0.5 text-left"
           >
-            <p className="truncate text-sm font-semibold text-[var(--ink)]">
+            <p className="truncate text-xs font-semibold text-[var(--ink)] sm:text-sm">
               {itemCount} item{itemCount === 1 ? '' : 's'} · {formatMoney(order.total)}
             </p>
-            <p className="truncate text-[11px] text-[var(--muted)]">
+            <p className="truncate text-[10px] text-[var(--muted)]">
               {formatClock(order.createdAt)} · {formatRelative(order.createdAt)}
             </p>
-            <ul className="mt-1 min-w-0 space-y-0.5">
-              {(order.items || []).slice(0, 2).map((item) => (
-                <li key={item.id} className="truncate text-[11px] text-[var(--ink-soft,#5c564c)]">
+            <ul className="mt-0.5 min-w-0 space-y-0">
+              {(order.items || []).slice(0, 1).map((item) => (
+                <li key={item.id} className="truncate text-[10px] text-[var(--ink-soft,#5c564c)]">
                   {item.dishNameSnapshot} × {item.quantity}
                 </li>
               ))}
-              {(order.items || []).length > 2 ? (
-                <li className="text-[10px] text-[var(--muted)]">
-                  +{(order.items || []).length - 2} more
+              {(order.items || []).length > 1 ? (
+                <li className="text-[9px] text-[var(--muted)]">
+                  +{(order.items || []).length - 1} more
                 </li>
               ) : null}
               {(order.items || []).length === 0 ? (
-                <li className="text-[11px] text-[var(--muted)]">No items yet — tap Open</li>
+                <li className="text-[10px] text-[var(--muted)]">No items yet — tap Open</li>
               ) : null}
             </ul>
           </button>
 
-          <div className="mt-3 flex min-w-0 flex-col gap-2">
-            <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+          <div className="mt-2 flex min-w-0 flex-col gap-1.5">
+            <div className="grid min-w-0 grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={onOpen}
-                className="inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-[var(--line)] bg-white px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--ink)] hover:bg-[var(--surface)]"
+                className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--ink)] hover:bg-[var(--surface)]"
               >
-                <Eye size={14} className="shrink-0" />
+                <Eye size={12} className="shrink-0" />
                 <span className="truncate">Open</span>
               </button>
               {canSettle ? (
@@ -720,16 +721,16 @@ function TableFloorTile({
                   disabled={printing || itemCount === 0}
                   onClick={onPrint}
                   className={[
-                    'inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl border px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.06em] disabled:opacity-60',
+                    'inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] disabled:opacity-60',
                     state === 'billed'
                       ? 'border-[var(--teal)]/40 bg-[var(--teal)]/15 text-[var(--teal)] hover:bg-[var(--teal)]/25'
                       : 'border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-deep)] hover:bg-[var(--accent)]/25',
                   ].join(' ')}
                 >
                   {printing ? (
-                    <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
                   ) : (
-                    <Printer size={14} className="shrink-0" />
+                    <Printer size={12} className="shrink-0" />
                   )}
                   <span className="truncate">Print</span>
                 </button>
@@ -740,12 +741,12 @@ function TableFloorTile({
                 type="button"
                 disabled={completing || itemCount === 0}
                 onClick={onComplete}
-                className="inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-[var(--ink)] px-2.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-black disabled:opacity-60"
+                className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg bg-[var(--ink)] px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white hover:bg-black disabled:opacity-60"
               >
                 {completing ? (
-                  <LoaderCircle size={14} className="shrink-0 animate-spin" />
+                  <LoaderCircle size={12} className="shrink-0 animate-spin" />
                 ) : (
-                  <Check size={14} className="shrink-0" />
+                  <Check size={12} className="shrink-0" />
                 )}
                 <span className="truncate">Complete</span>
               </button>
@@ -757,17 +758,17 @@ function TableFloorTile({
           type="button"
           disabled={opening}
           onClick={onOpen}
-          className="mt-4 flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-white/70 px-2 py-4 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60"
+          className="mt-2 flex min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-1.5 py-2.5 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60 sm:py-3"
         >
           {opening ? (
-            <LoaderCircle size={18} className="animate-spin text-[var(--muted)]" />
+            <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />
           ) : (
-            <Plus size={18} className="text-[var(--ink)]" />
+            <Plus size={16} className="text-[var(--ink)]" />
           )}
-          <p className="mt-2 text-sm font-semibold text-[var(--ink)]">
+          <p className="mt-1 text-xs font-semibold text-[var(--ink)]">
             {opening ? 'Opening…' : 'Start order'}
           </p>
-          <p className="mt-1 text-[11px] text-[var(--muted)]">Tap to add dishes</p>
+          <p className="mt-0.5 text-[10px] text-[var(--muted)]">Tap to add</p>
         </button>
       )}
     </article>
@@ -776,11 +777,11 @@ function TableFloorTile({
 
 function FloorSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
       {Array.from({ length: 8 }).map((_, index) => (
         <div
           key={index}
-          className="min-h-[11.5rem] animate-pulse rounded-2xl border border-[var(--line)] bg-white/70"
+          className="min-h-[8.5rem] animate-pulse rounded-xl border border-[var(--line)] bg-white/70"
         />
       ))}
     </div>

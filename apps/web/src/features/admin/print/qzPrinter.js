@@ -1,4 +1,5 @@
 import qzTray from 'qz-tray';
+import { api } from '../../../shared/api/client.js';
 
 const qz = qzTray?.websocket ? qzTray : qzTray?.default || qzTray;
 
@@ -28,15 +29,19 @@ export function clearDefaultPrinter() {
   saveDefaultPrinter('');
 }
 
-/** Preferred thermal paper width in mm (58 default). */
+/**
+ * Thermal paper width in mm.
+ * Always 80mm for restaurant POS rolls — stale localStorage `58` caused
+ * narrow left-aligned bills with empty right margin on real 80mm paper.
+ */
 export function getSavedPaperWidthMm() {
   try {
     const raw = window.localStorage.getItem(PAPER_KEY);
-    const n = Number(raw);
-    return n === 80 ? 80 : 58;
+    if (raw === '58') window.localStorage.setItem(PAPER_KEY, '80');
   } catch {
-    return 58;
+    // ignore
   }
+  return 80;
 }
 
 export function savePaperWidthMm(mm) {
@@ -51,13 +56,62 @@ export function getQzDownloadUrl() {
   return QZ_DOWNLOAD;
 }
 
+export function getQzOverrideCertUrl() {
+  return '/qz/override.crt';
+}
+
 let connectPromise = null;
+let securityConfigured = false;
+
+/**
+ * Register QZ certificate + signature handlers once.
+ * Without this, Tray prompts on every print and "Remember" often will not stick.
+ */
+function ensureQzSecurity() {
+  if (securityConfigured) return;
+  securityConfigured = true;
+
+  qz.security.setCertificatePromise((resolve, reject) => {
+    api
+      .getQzCertificate()
+      .then((cert) => {
+        const text = typeof cert === 'string' ? cert : '';
+        if (!text.includes('BEGIN CERTIFICATE')) {
+          reject(new Error('Invalid QZ certificate from server'));
+          return;
+        }
+        resolve(text);
+      })
+      .catch((err) => reject(err));
+  });
+
+  if (typeof qz.security.setSignatureAlgorithm === 'function') {
+    qz.security.setSignatureAlgorithm('SHA512');
+  }
+
+  qz.security.setSignaturePromise((toSign) => {
+    return (resolve, reject) => {
+      api
+        .signQzRequest(toSign)
+        .then((signature) => {
+          const text = typeof signature === 'string' ? signature.trim() : '';
+          if (!text) {
+            reject(new Error('Empty QZ signature'));
+            return;
+          }
+          resolve(text);
+        })
+        .catch((err) => reject(err));
+    };
+  });
+}
 
 /**
  * Connect to local QZ Tray (must be installed & running).
- * First connect may prompt the user to allow this site.
+ * First connect may prompt once — choose Allow + Remember this decision.
  */
 export async function ensureQzConnected() {
+  ensureQzSecurity();
   if (qz.websocket.isActive()) return true;
   if (!connectPromise) {
     connectPromise = qz.websocket
@@ -125,8 +179,8 @@ export async function printHtmlWithQz(printerName, html) {
       flavor: 'plain',
       data: html,
       options: {
-        // 58mm ≈ 2.28in — safer default for small Indian POS printers
-        pageWidth: 2.28,
+        // 80mm ≈ 3.15in printable width
+        pageWidth: 3.15,
       },
     },
   ]);

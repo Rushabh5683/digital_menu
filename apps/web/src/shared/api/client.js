@@ -249,6 +249,17 @@ export const api = {
     });
   },
 
+  getQzCertificate() {
+    return request('/api/admin/qz/certificate');
+  },
+
+  signQzRequest(toSign) {
+    return request('/api/admin/qz/sign', {
+      method: 'POST',
+      body: JSON.stringify({ request: String(toSign || '') }),
+    });
+  },
+
   addAdminOrderItems(orderId, items) {
     return request(`/api/admin/orders/${encodeURIComponent(orderId)}/items`, {
       method: 'POST',

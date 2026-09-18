@@ -33,9 +33,16 @@ export function useBillPrint() {
     onPrintedRef.current = null;
   }, [printing]);
 
-  const runEscPosPrint = useCallback(async (printerName, { restaurant, order }) => {
-    const paperWidthMm = getSavedPaperWidthMm();
-    const payload = buildThermalBillEscPos({ restaurant, order, paperWidthMm });
+  const runEscPosPrint = useCallback(async (printerName, { restaurant, order, cashierName }) => {
+    // Always 80mm — matches restaurant thermal rolls (avoids narrow 58mm layout)
+    const paperWidthMm = 80;
+    getSavedPaperWidthMm(); // migrate any stale localStorage 58 → 80
+    const payload = buildThermalBillEscPos({
+      restaurant,
+      order,
+      paperWidthMm,
+      cashierName,
+    });
     if (!payload?.base64) throw new Error('Order has nothing to print');
     await printRawEscPosWithQz(printerName, payload.base64);
   }, []);
@@ -55,9 +62,9 @@ export function useBillPrint() {
   }, []);
 
   const printBill = useCallback(
-    async ({ restaurant, order, forcePicker = false, onPrinted } = {}) => {
+    async ({ restaurant, order, cashierName, forcePicker = false, onPrinted } = {}) => {
       setError(null);
-      setPending({ restaurant, order });
+      setPending({ restaurant, order, cashierName });
       onPrintedRef.current = onPrinted || null;
 
       if (forcePicker) {
@@ -78,12 +85,11 @@ export function useBillPrint() {
           setPickerOpen(true);
           return { ok: false, needsPicker: true };
         }
-        await runEscPosPrint(saved, { restaurant, order });
+        await runEscPosPrint(saved, { restaurant, order, cashierName });
         await finishOk();
         return { ok: true, mode: 'escpos' };
       } catch (err) {
         if (isQzUnavailableError(err)) {
-          // QZ offline → browser print so floor is not blocked
           try {
             runBrowserFallback({ restaurant, order });
             await finishOk();

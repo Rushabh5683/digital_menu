@@ -4,6 +4,7 @@ import { Button } from '../../../shared/ui/Button.jsx';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import {
   getQzDownloadUrl,
+  getQzOverrideCertUrl,
   getSavedPrinter,
   isQzUnavailableError,
   listQzPrinters,
@@ -94,6 +95,10 @@ export function PrinterSelectModal({
             <p className="mt-1 text-sm text-[var(--muted)]">
               Saved as default for next time — no browser print preview.
             </p>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              If QZ asks for permission, tick <strong>Remember this decision</strong> then{' '}
+              <strong>Allow</strong> once. After that, prints stay silent.
+            </p>
           </div>
           <button
             type="button"
@@ -118,6 +123,20 @@ export function PrinterSelectModal({
               Download QZ Tray
             </a>
           ) : null}
+
+          <p className="text-[11px] leading-relaxed text-[var(--muted)]">
+            Still prompted every time? Install the site certificate once: download{' '}
+            <a
+              href={getQzOverrideCertUrl()}
+              download="override.crt"
+              className="font-semibold text-[var(--teal)] underline"
+            >
+              override.crt
+            </a>
+            , copy it into{' '}
+            <code className="rounded bg-black/[0.04] px-1">C:\Program Files\QZ Tray\</code>, then
+            restart QZ Tray.
+          </p>
 
           {loading ? (
             <p className="inline-flex items-center gap-2 text-sm text-[var(--muted)]">
