@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Check,
+  FileText,
   LoaderCircle,
   Minus,
   Plus,
@@ -44,7 +45,7 @@ export function AdminOrderEditorPage() {
   const [addingDishId, setAddingDishId] = useState(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const { printBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
+  const { printBill, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
     useBillPrint();
 
   const orderQuery = useQuery({
@@ -166,6 +167,22 @@ export function AdminOrderEditorPage() {
     });
   };
 
+  const handlePreview = () => {
+    const currentOrder = orderQuery.data;
+    const currentRestaurant = restaurantQuery.data;
+    if (!currentOrder) return;
+    setError(null);
+    clearPrintError();
+    previewBill({
+      restaurant: currentRestaurant,
+      order: currentOrder,
+      cashierName: user?.name || 'Staff',
+      onPrinted: async () => {
+        await printMutation.mutateAsync();
+      },
+    });
+  };
+
   const completeMutation = useMutation({
     mutationFn: (payment) => {
       let businessDate;
@@ -229,7 +246,7 @@ export function AdminOrderEditorPage() {
     return (
       <div className="flex min-h-[50vh] items-center justify-center gap-2 text-[var(--muted)]">
         <LoaderCircle className="animate-spin" size={18} />
-        Loading order‚Ä¶
+        Loading orderù
       </div>
     );
   }
@@ -249,7 +266,7 @@ export function AdminOrderEditorPage() {
     order.tableLabel ||
     (order.tableNumber != null
       ? `Table ${String(order.tableNumber).padStart(2, '0')}`
-      : 'Table ‚Äî');
+      : 'Table ù');
   const lineBusy =
     qtyMutation.isPending || removeMutation.isPending || addMutation.isPending;
   const billed = Boolean(order.billPrintedAt);
@@ -269,7 +286,7 @@ export function AdminOrderEditorPage() {
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               {table}
-              {billed ? ' ¬∑ Bill printed' : ''}
+              {billed ? ' ù Bill printed' : ''}
             </p>
             <h1
               className="truncate text-2xl text-[var(--ink)]"
@@ -281,7 +298,7 @@ export function AdminOrderEditorPage() {
               Order ID: {order.orderNumber || order.id}
             </p>
             <p className="text-xs text-[var(--muted)]">
-              {formatClock(order.createdAt)} ¬∑ {order.status.replaceAll('_', ' ')}
+              {formatClock(order.createdAt)} ù {order.status.replaceAll('_', ' ')}
             </p>
           </div>
         </div>
@@ -297,19 +314,30 @@ export function AdminOrderEditorPage() {
             {saveFlash ? 'Saved' : 'Save'}
           </Button>
           {canSettle ? (
-            <Button
-              variant="secondary"
-              disabled={qzPrinting || printMutation.isPending || items.length === 0}
-              onClick={handlePrint}
-              className="gap-1.5"
-            >
-              {qzPrinting || printMutation.isPending ? (
-                <LoaderCircle size={16} className="animate-spin" />
-              ) : (
-                <Printer size={16} />
-              )}
-              Print
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                disabled={items.length === 0}
+                onClick={handlePreview}
+                className="gap-1.5"
+              >
+                <FileText size={16} />
+                Preview
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={qzPrinting || printMutation.isPending || items.length === 0}
+                onClick={handlePrint}
+                className="gap-1.5"
+              >
+                {qzPrinting || printMutation.isPending ? (
+                  <LoaderCircle size={16} className="animate-spin" />
+                ) : (
+                  <Printer size={16} />
+                )}
+                Print
+              </Button>
+            </>
           ) : null}
           {canEdit && canSettle ? (
             <Button
@@ -341,7 +369,7 @@ export function AdminOrderEditorPage() {
       ) : null}
 
       {!canEdit ? (
-        <Alert tone="info">This ticket is closed ‚Äî view only.</Alert>
+        <Alert tone="info">This ticket is closed ù view only.</Alert>
       ) : null}
 
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
@@ -353,7 +381,7 @@ export function AdminOrderEditorPage() {
             </p>
             <ul className="flex gap-1.5 overflow-x-auto overscroll-x-contain px-2.5 py-2.5 lg:max-h-[min(70vh,36rem)] lg:flex-col lg:space-y-0.5 lg:overflow-y-auto lg:px-1.5 lg:pb-3">
               {dishesQuery.isLoading ? (
-                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">Loading‚Ä¶</li>
+                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">Loadingù</li>
               ) : categories.length === 0 ? (
                 <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">No categories</li>
               ) : (
@@ -400,7 +428,7 @@ export function AdminOrderEditorPage() {
                 <input
                   value={dishSearch}
                   onChange={(e) => setDishSearch(e.target.value)}
-                  placeholder="Search dishes in this category‚Ä¶"
+                  placeholder="Search dishes in this categoryù"
                   className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] py-2 pl-9 pr-3 text-sm outline-none ring-[var(--teal)] focus:ring-2"
                 />
               </label>
@@ -426,7 +454,7 @@ export function AdminOrderEditorPage() {
                       <span className="min-w-0">
                         <span className="block truncate font-semibold text-[var(--ink)]">
                           {dish.name}
-                          {addingDishId === dish.id ? '‚Ä¶' : ''}
+                          {addingDishId === dish.id ? 'ù' : ''}
                         </span>
                       </span>
                       <span className="shrink-0 text-sm font-bold text-[var(--teal)]">
@@ -447,14 +475,14 @@ export function AdminOrderEditorPage() {
               Current order
             </p>
             <p className="mt-0.5 text-sm text-[var(--ink-soft,#5c564c)]">
-              {items.length} line{items.length === 1 ? '' : 's'} ¬∑ tap dishes on the left to add
+              {items.length} line{items.length === 1 ? '' : 's'} ù tap dishes on the left to add
             </p>
           </div>
 
           <ul className="max-h-[min(55vh,28rem)] flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {items.length === 0 ? (
               <li className="rounded-xl border border-dashed border-[var(--line)] px-3 py-10 text-center text-sm text-[var(--muted)]">
-                No items yet ‚Äî pick a category and tap dishes on the left
+                No items yet ù pick a category and tap dishes on the left
               </li>
             ) : (
               items.map((item) => (
@@ -503,7 +531,7 @@ export function AdminOrderEditorPage() {
                       </button>
                     </div>
                   ) : (
-                    <span className="shrink-0 text-sm font-semibold">√ó {item.quantity}</span>
+                    <span className="shrink-0 text-sm font-semibold">ù {item.quantity}</span>
                   )}
                   <span className="w-14 shrink-0 text-right text-sm font-bold text-[var(--teal)]">
                     {formatMoney(item.subtotal)}
@@ -583,19 +611,30 @@ export function AdminOrderEditorPage() {
               {saveFlash ? 'Saved' : 'Save'}
             </Button>
             {canSettle ? (
-              <Button
-                variant="secondary"
-                disabled={qzPrinting || printMutation.isPending || items.length === 0}
-                onClick={handlePrint}
-                className="min-w-0 flex-1 gap-1.5"
-              >
-                {qzPrinting || printMutation.isPending ? (
-                  <LoaderCircle size={16} className="animate-spin" />
-                ) : (
-                  <Printer size={16} />
-                )}
-                Print
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={items.length === 0}
+                  onClick={handlePreview}
+                  className="min-w-0 flex-1 gap-1.5"
+                >
+                  <FileText size={16} />
+                  Preview
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={qzPrinting || printMutation.isPending || items.length === 0}
+                  onClick={handlePrint}
+                  className="min-w-0 flex-1 gap-1.5"
+                >
+                  {qzPrinting || printMutation.isPending ? (
+                    <LoaderCircle size={16} className="animate-spin" />
+                  ) : (
+                    <Printer size={16} />
+                  )}
+                  Print
+                </Button>
+              </>
             ) : null}
             {canEdit && canSettle ? (
               <Button
@@ -613,7 +652,7 @@ export function AdminOrderEditorPage() {
 
       <PaymentMethodModal
         open={paymentOpen}
-        orderLabel={`${table} ¬∑ #${displayNo}`}
+        orderLabel={`${table} ù #${displayNo}`}
         totalLabel={formatMoney(order.total)}
         orderTotal={Number(order.total || 0)}
         busy={completeMutation.isPending}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  FileText,
   Check,
   Clock3,
   Eye,
@@ -89,7 +90,7 @@ export function AdminOrdersPage() {
   const [completeTarget, setCompleteTarget] = useState(null);
   const knownPlacedIdsRef = useRef(null);
   const [nowTick, setNowTick] = useState(Date.now());
-  const { printBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
+  const { printBill, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
     useBillPrint();
   const canSettle = user?.role === UserRoles.RESTAURANT_ADMIN;
 
@@ -135,7 +136,7 @@ export function AdminOrdersPage() {
     refetchIntervalInBackground: true,
   });
 
-  const restaurant = ordersQuery.data?.restaurant || restaurantQuery.data || user?.restaurant;
+  const restaurant = restaurantQuery.data || ordersQuery.data?.restaurant || user?.restaurant;
   const orders = ordersQuery.data?.orders || [];
   const tables = useMemo(
     () =>
@@ -329,7 +330,21 @@ export function AdminOrdersPage() {
     setActionError(null);
     clearPrintError();
     await printBill({
-      restaurant,
+      restaurant: restaurantQuery.data || restaurant,
+      order,
+      cashierName: user?.name || 'Staff',
+      onPrinted: async () => {
+        await printMutation.mutateAsync(order);
+      },
+    });
+  };
+
+  const handleFloorPreview = (order) => {
+    if (!order) return;
+    setActionError(null);
+    clearPrintError();
+    previewBill({
+      restaurant: restaurantQuery.data || restaurant,
       order,
       cashierName: user?.name || 'Staff',
       onPrinted: async () => {
@@ -528,6 +543,7 @@ export function AdminOrdersPage() {
                   startOrderMutation.variables?.id === table.id
                 }
                 onOpen={() => openTable(table, order, openTicket)}
+                onPreview={canSettle ? () => handleFloorPreview(order) : null}
                 onPrint={canSettle ? () => handleFloorPrint(order) : null}
                 onComplete={canSettle ? () => order && setCompleteTarget(order) : null}
                 canSettle={canSettle}
@@ -598,6 +614,7 @@ function TableFloorTile({
   order,
   flashing,
   onOpen,
+  onPreview,
   onPrint,
   onComplete,
   canSettle = true,
@@ -718,6 +735,19 @@ function TableFloorTile({
               {canSettle ? (
                 <button
                   type="button"
+                  disabled={itemCount === 0}
+                  onClick={onPreview}
+                  className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--ink)] hover:bg-[var(--surface)] disabled:opacity-60"
+                >
+                  <FileText size={12} className="shrink-0" />
+                  <span className="truncate">Preview</span>
+                </button>
+              ) : null}
+            </div>
+            {canSettle ? (
+              <div className="grid min-w-0 grid-cols-2 gap-1.5">
+                <button
+                  type="button"
                   disabled={printing || itemCount === 0}
                   onClick={onPrint}
                   className={[
@@ -734,22 +764,20 @@ function TableFloorTile({
                   )}
                   <span className="truncate">Print</span>
                 </button>
-              ) : null}
-            </div>
-            {canSettle ? (
-              <button
-                type="button"
-                disabled={completing || itemCount === 0}
-                onClick={onComplete}
-                className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg bg-[var(--ink)] px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white hover:bg-black disabled:opacity-60"
-              >
-                {completing ? (
-                  <LoaderCircle size={12} className="shrink-0 animate-spin" />
-                ) : (
-                  <Check size={12} className="shrink-0" />
-                )}
-                <span className="truncate">Complete</span>
-              </button>
+                <button
+                  type="button"
+                  disabled={completing || itemCount === 0}
+                  onClick={onComplete}
+                  className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg bg-[var(--ink)] px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white hover:bg-black disabled:opacity-60"
+                >
+                  {completing ? (
+                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
+                  ) : (
+                    <Check size={12} className="shrink-0" />
+                  )}
+                  <span className="truncate">Complete</span>
+                </button>
+              </div>
             ) : null}
           </div>
         </>

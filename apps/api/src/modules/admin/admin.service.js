@@ -645,7 +645,17 @@ export async function listAdminOrders(restaurantId, query = {}) {
       }),
       prisma.restaurant.findUnique({
         where: { id: restaurantId },
-        select: { id: true, name: true, slug: true, logoUrl: true },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          phone: true,
+          address: true,
+          gstin: true,
+          fssaiLicense: true,
+          billThanksMessage: true,
+        },
       }),
       prisma.order.count({ where: { restaurantId, status: 'PLACED' } }),
       prisma.order.count({ where: { restaurantId, status: 'ACCEPTED' } }),
@@ -682,7 +692,15 @@ export async function listAdminOrders(restaurantId, query = {}) {
   });
 
   return {
-    restaurant,
+    restaurant: restaurant
+      ? {
+          ...restaurant,
+          logoUrl: toPublicUploadUrl(restaurant.logoUrl),
+          billThanksMessage:
+            restaurant.billThanksMessage ??
+            'Thanks for visiting us. Drive safe. Stay healthy.',
+        }
+      : null,
     orders: sorted.map((order) => serializeOrder(order, { includeItems: true })),
     counts: {
       PLACED: placed,

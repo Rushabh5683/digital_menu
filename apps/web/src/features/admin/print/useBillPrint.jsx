@@ -4,6 +4,7 @@ import {
   buildThermalBillHtml,
   printHtmlViaIframe,
 } from '../orderBillPrint.js';
+import { BillPreviewModal } from './BillPreviewModal.jsx';
 import { PrinterSelectModal } from './PrinterSelectModal.jsx';
 import {
   getSavedPaperWidthMm,
@@ -18,9 +19,12 @@ import {
  * Shared Print flow:
  * 1) ESC/POS raw via QZ (compact thermal) when QZ + printer available
  * 2) Browser print dialog fallback (HTML) if QZ is offline
+ * Also: on-screen Preview (no paper) to check layout.
  */
 export function useBillPrint() {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
   const [pending, setPending] = useState(null);
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState(null);
@@ -29,14 +33,23 @@ export function useBillPrint() {
   const closePicker = useCallback(() => {
     if (printing) return;
     setPickerOpen(false);
-    setPending(null);
+    if (!previewOpen) setPending(null);
     onPrintedRef.current = null;
-  }, [printing]);
+  }, [printing, previewOpen]);
+
+  const closePreview = useCallback(() => {
+    if (printing) return;
+    setPreviewOpen(false);
+    setPreviewHtml('');
+    if (!pickerOpen) {
+      setPending(null);
+      onPrintedRef.current = null;
+    }
+  }, [printing, pickerOpen]);
 
   const runEscPosPrint = useCallback(async (printerName, { restaurant, order, cashierName }) => {
-    // Always 80mm — matches restaurant thermal rolls (avoids narrow 58mm layout)
     const paperWidthMm = 80;
-    getSavedPaperWidthMm(); // migrate any stale localStorage 58 → 80
+    getSavedPaperWidthMm();
     const payload = buildThermalBillEscPos({
       restaurant,
       order,
@@ -57,8 +70,24 @@ export function useBillPrint() {
     const cb = onPrintedRef.current;
     onPrintedRef.current = null;
     setPickerOpen(false);
+    setPreviewOpen(false);
+    setPreviewHtml('');
     setPending(null);
     if (typeof cb === 'function') await cb();
+  }, []);
+
+  const previewBill = useCallback(({ restaurant, order, cashierName, onPrinted } = {}) => {
+    setError(null);
+    const html = buildThermalBillHtml({ restaurant, order, cashierName });
+    if (!html) {
+      setError('Order has nothing to preview');
+      return { ok: false };
+    }
+    setPending({ restaurant, order, cashierName });
+    onPrintedRef.current = onPrinted || null;
+    setPreviewHtml(html);
+    setPreviewOpen(true);
+    return { ok: true };
   }, []);
 
   const printBill = useCallback(
@@ -140,17 +169,38 @@ export function useBillPrint() {
     [finishOk, pending, runBrowserFallback, runEscPosPrint],
   );
 
+  const printFromPreview = useCallback(async () => {
+    if (!pending) return;
+    setPreviewOpen(false);
+    await printBill({
+      restaurant: pending.restaurant,
+      order: pending.order,
+      cashierName: pending.cashierName,
+      onPrinted: onPrintedRef.current,
+    });
+  }, [pending, printBill]);
+
   const printerModal = (
-    <PrinterSelectModal
-      open={pickerOpen}
-      busy={printing}
-      onCancel={closePicker}
-      onConfirm={confirmPrinter}
-    />
+    <>
+      <PrinterSelectModal
+        open={pickerOpen}
+        busy={printing}
+        onCancel={closePicker}
+        onConfirm={confirmPrinter}
+      />
+      <BillPreviewModal
+        open={previewOpen}
+        html={previewHtml}
+        busy={printing}
+        onClose={closePreview}
+        onPrint={printFromPreview}
+      />
+    </>
   );
 
   return {
     printBill,
+    previewBill,
     printing,
     printError: error,
     clearPrintError: () => setError(null),
