@@ -146,6 +146,15 @@ function leftRight(left, right, width) {
   return `${l.slice(0, maxLeft)} ${r}`.slice(0, width);
 }
 
+/** Center text in a fixed-width column (for Qty values under "Qty."). */
+function centerPad(text, width) {
+  const t = String(text ?? '');
+  if (t.length >= width) return t.slice(0, width);
+  const left = Math.floor((width - t.length) / 2);
+  const right = width - t.length - left;
+  return `${' '.repeat(left)}${t}${' '.repeat(right)}`;
+}
+
 function encodeUtf8ToBytes(str) {
   return new TextEncoder().encode(str);
 }
@@ -214,17 +223,17 @@ export function buildThermalBillEscPos({
   const alignCenter = () => pushCmd(0x1b, 0x61, 0x01);
 
   /**
-   * Solid graphic rule (PetPooja-style) — not dotted dashes.
+   * Solid graphic rule — thin single-dot stroke (not a heavy black bar).
    * ESC * 8-dot single-density across full printable width.
-   * @param {'thin' | 'thick'} weight
+   * @param {'thin' | 'medium'} weight
    */
   const pushSolidRule = (weight = 'thin') => {
-    const dotsPerCol = paperWidthMm >= 80 ? 12 : 12;
+    const dotsPerCol = 12;
     const nDots = cols * dotsPerCol;
     const nL = nDots & 0xff;
     const nH = (nDots >> 8) & 0xff;
-    // bit pattern in one vertical byte — more bits = thicker line
-    const fill = weight === 'thick' ? 0x7e : 0x3c;
+    // One or two vertical dots only — keeps the line fine like PetPooja sample
+    const fill = weight === 'medium' ? 0x18 : 0x08;
     pushCmd(0x1b, 0x2a, 0x00, nL, nH);
     pushBytes(new Uint8Array(nDots).fill(fill));
     pushCmd(0x0a);
@@ -266,11 +275,11 @@ export function buildThermalBillEscPos({
   }
   boldOff();
 
-  // Thick solid line → Name: → thick solid line
+  // Fine solid line → Name: → fine solid line
   alignLeft();
-  pushSolidRule('thick');
+  pushSolidRule('medium');
   pushText('Name:');
-  pushSolidRule('thick');
+  pushSolidRule('medium');
 
   // Date (normal) ··· Dine In (bold)
   // time
@@ -286,7 +295,7 @@ export function buildThermalBillEscPos({
   const itemW = Math.max(10, cols - amtW - priceW - qtyW - 3);
 
   pushText(
-    `${'No.Item'.padEnd(itemW)} ${'Qty.'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amount'.padStart(amtW)}`,
+    `${'No.Item'.padEnd(itemW)} ${centerPad('Qty.', qtyW)} ${'Price'.padStart(priceW)} ${'Amount'.padStart(amtW)}`,
   );
   pushSolidRule('thin');
 
@@ -294,14 +303,19 @@ export function buildThermalBillEscPos({
     const qty = Number(item.quantity) || 0;
     const price = Number(item.priceSnapshot) || 0;
     const amount = Number(item.subtotal) || qty * price;
-    const title = `${index + 1} ${item.dishNameSnapshot || item.dishName || 'Item'}`;
-    const wrapped = wrapText(title, itemW);
-    const first = (wrapped[0] || `${index + 1}`).padEnd(itemW).slice(0, itemW);
+    const prefix = `${index + 1} `;
+    const dishName = String(item.dishNameSnapshot || item.dishName || 'Item');
+    // Wrap name only — continuation lines indent under the name, not under the number
+    const nameLines = wrapText(dishName, Math.max(4, itemW - prefix.length));
+    const firstName = nameLines[0] || '';
+    const first = `${prefix}${firstName}`.padEnd(itemW).slice(0, itemW);
+    const qtyCol = centerPad(String(qty), qtyW);
     pushText(
-      `${first} ${String(qty).padStart(qtyW)} ${money(price).padStart(priceW)} ${money(amount).padStart(amtW)}`,
+      `${first} ${qtyCol} ${money(price).padStart(priceW)} ${money(amount).padStart(amtW)}`,
     );
-    for (let i = 1; i < wrapped.length; i += 1) {
-      pushText(wrapped[i].padEnd(itemW).slice(0, cols));
+    const indent = ' '.repeat(prefix.length);
+    for (let i = 1; i < nameLines.length; i += 1) {
+      pushText(`${indent}${nameLines[i]}`.slice(0, cols));
     }
   });
 
@@ -323,14 +337,18 @@ export function buildThermalBillEscPos({
   boldOff();
   pushSolidRule('thin');
 
-  // Footer from restaurant settings; thanks always has fallback
+  // Footer — FSSAI / GST double-height so they read larger; thanks normal bold
   alignCenter();
   boldOn();
-  if (fssai) {
-    for (const line of wrapText(`FSSAI Lic No. ${fssai}`, cols)) pushText(line);
-  }
-  if (gstin) {
-    for (const line of wrapText(`GST NO: ${gstin}`, cols)) pushText(line);
+  if (fssai || gstin) {
+    pushCmd(0x1d, 0x21, 0x01); // GS ! — double height
+    if (fssai) {
+      for (const line of wrapText(`FSSAI Lic No. ${fssai}`, cols)) pushText(line);
+    }
+    if (gstin) {
+      for (const line of wrapText(`GST NO: ${gstin}`, cols)) pushText(line);
+    }
+    pushCmd(0x1d, 0x21, 0x00);
   }
   const thanksLines =
     /drive safe\.?\s*stay healthy\.?/i.test(thanks)
@@ -432,8 +450,8 @@ export function buildThermalBillHtml({ restaurant, order, cashierName = 'Staff' 
     .center { text-align: center; }
     .title { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
     .head-line { font-size: 12px; font-weight: 700; text-transform: uppercase; }
-    .rule { border: none; border-top: 3px solid #000; margin: 3px 0; }
-    .rule-thin { border: none; border-top: 2px solid #000; margin: 3px 0; }
+    .rule { border: none; border-top: 1.5px solid #000; margin: 3px 0; }
+    .rule-thin { border: none; border-top: 1px solid #000; margin: 3px 0; }
     .meta { width: 100%; border-collapse: collapse; font-size: 12px; }
     .meta td { vertical-align: top; padding: 0; }
     .meta .r { text-align: right; }
@@ -452,6 +470,7 @@ export function buildThermalBillHtml({ restaurant, order, cashierName = 'Staff' 
     .totals .r { text-align: right; }
     .grand { font-size: 14px; font-weight: 700; }
     .foot { margin-top: 4px; font-size: 12px; font-weight: 700; line-height: 1.25; }
+    .foot-lic { font-size: 14px; font-weight: 700; line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -534,8 +553,8 @@ export function buildThermalBillHtml({ restaurant, order, cashierName = 'Staff' 
     <hr class="rule-thin" />
 
     <div class="foot center">
-      ${fssai ? `<div>FSSAI Lic No. ${escapeHtml(fssai)}</div>` : ''}
-      ${gstin ? `<div>GST NO: ${escapeHtml(gstin)}</div>` : ''}
+      ${fssai ? `<div class="foot-lic">FSSAI Lic No. ${escapeHtml(fssai)}</div>` : ''}
+      ${gstin ? `<div class="foot-lic">GST NO: ${escapeHtml(gstin)}</div>` : ''}
       <div>${thanksHtml}</div>
     </div>
   </div>
