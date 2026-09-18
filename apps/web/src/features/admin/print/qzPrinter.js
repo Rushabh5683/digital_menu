@@ -3,10 +3,8 @@ import qzTray from 'qz-tray';
 const qz = qzTray?.websocket ? qzTray : qzTray?.default || qzTray;
 
 const STORAGE_KEY = 'dm:default-printer';
+const PAPER_KEY = 'dm:thermal-paper-mm';
 const QZ_DOWNLOAD = 'https://qz.io/download/';
-
-/** 80mm thermal width in inches for QZ pixel HTML. */
-const THERMAL_WIDTH_IN = 3.15;
 
 export function getSavedPrinter() {
   try {
@@ -28,6 +26,25 @@ export function saveDefaultPrinter(name) {
 
 export function clearDefaultPrinter() {
   saveDefaultPrinter('');
+}
+
+/** Preferred thermal paper width in mm (58 default). */
+export function getSavedPaperWidthMm() {
+  try {
+    const raw = window.localStorage.getItem(PAPER_KEY);
+    const n = Number(raw);
+    return n === 80 ? 80 : 58;
+  } catch {
+    return 58;
+  }
+}
+
+export function savePaperWidthMm(mm) {
+  try {
+    window.localStorage.setItem(PAPER_KEY, String(mm === 80 ? 80 : 58));
+  } catch {
+    // ignore
+  }
 }
 
 export function getQzDownloadUrl() {
@@ -63,6 +80,31 @@ export async function listQzPrinters() {
 }
 
 /**
+ * Silent ESC/POS raw print via QZ Tray (compact thermal bills).
+ * @param {string} printerName
+ * @param {string} base64Payload - ESC/POS bytes as base64
+ */
+export async function printRawEscPosWithQz(printerName, base64Payload) {
+  if (!printerName) throw new Error('Select a printer');
+  if (!base64Payload) throw new Error('Nothing to print');
+
+  await ensureQzConnected();
+  const config = qz.configs.create(printerName, {
+    encoding: 'ISO-8859-1',
+  });
+
+  await qz.print(config, [
+    {
+      type: 'raw',
+      format: 'command',
+      flavor: 'base64',
+      data: base64Payload,
+    },
+  ]);
+}
+
+/**
+ * @deprecated Prefer printRawEscPosWithQz for thermal printers.
  * Silent print HTML to a named printer via QZ Tray (no browser preview).
  */
 export async function printHtmlWithQz(printerName, html) {
@@ -72,7 +114,7 @@ export async function printHtmlWithQz(printerName, html) {
   await ensureQzConnected();
   const config = qz.configs.create(printerName, {
     margins: 0,
-    scaleContent: false,
+    scaleContent: true,
     rasterize: true,
   });
 
@@ -83,7 +125,8 @@ export async function printHtmlWithQz(printerName, html) {
       flavor: 'plain',
       data: html,
       options: {
-        pageWidth: THERMAL_WIDTH_IN,
+        // 58mm ≈ 2.28in — safer default for small Indian POS printers
+        pageWidth: 2.28,
       },
     },
   ]);

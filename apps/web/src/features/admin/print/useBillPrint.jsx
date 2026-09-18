@@ -1,16 +1,23 @@
 import { useCallback, useRef, useState } from 'react';
-import { buildThermalBillHtml } from '../orderBillPrint.js';
+import {
+  buildThermalBillEscPos,
+  buildThermalBillHtml,
+  printHtmlViaIframe,
+} from '../orderBillPrint.js';
 import { PrinterSelectModal } from './PrinterSelectModal.jsx';
 import {
+  getSavedPaperWidthMm,
   getSavedPrinter,
   isQzUnavailableError,
   listQzPrinters,
-  printHtmlWithQz,
+  printRawEscPosWithQz,
+  saveDefaultPrinter,
 } from './qzPrinter.js';
 
 /**
- * Shared Print flow: thermal bill → QZ silent print using saved default printer,
- * or open picker when no default / printer missing.
+ * Shared Print flow:
+ * 1) ESC/POS raw via QZ (compact thermal) when QZ + printer available
+ * 2) Browser print dialog fallback (HTML) if QZ is offline
  */
 export function useBillPrint() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -26,10 +33,17 @@ export function useBillPrint() {
     onPrintedRef.current = null;
   }, [printing]);
 
-  const runPrint = useCallback(async (printerName, { restaurant, order }) => {
+  const runEscPosPrint = useCallback(async (printerName, { restaurant, order }) => {
+    const paperWidthMm = getSavedPaperWidthMm();
+    const payload = buildThermalBillEscPos({ restaurant, order, paperWidthMm });
+    if (!payload?.base64) throw new Error('Order has nothing to print');
+    await printRawEscPosWithQz(printerName, payload.base64);
+  }, []);
+
+  const runBrowserFallback = useCallback(({ restaurant, order }) => {
     const html = buildThermalBillHtml({ restaurant, order });
     if (!html) throw new Error('Order has nothing to print');
-    await printHtmlWithQz(printerName, html);
+    printHtmlViaIframe(html);
   }, []);
 
   const finishOk = useCallback(async () => {
@@ -64,14 +78,22 @@ export function useBillPrint() {
           setPickerOpen(true);
           return { ok: false, needsPicker: true };
         }
-        await runPrint(saved, { restaurant, order });
+        await runEscPosPrint(saved, { restaurant, order });
         await finishOk();
-        return { ok: true };
+        return { ok: true, mode: 'escpos' };
       } catch (err) {
         if (isQzUnavailableError(err)) {
-          setPickerOpen(true);
-          setError(err.message || 'QZ Tray is not available');
-          return { ok: false, needsPicker: true, error: err };
+          // QZ offline → browser print so floor is not blocked
+          try {
+            runBrowserFallback({ restaurant, order });
+            await finishOk();
+            setError('QZ Tray offline — opened browser print instead');
+            return { ok: true, mode: 'browser-fallback' };
+          } catch (fallbackErr) {
+            setPickerOpen(true);
+            setError(fallbackErr.message || err.message || 'Print failed');
+            return { ok: false, needsPicker: true, error: fallbackErr };
+          }
         }
         setPickerOpen(true);
         setError(err.message || 'Print failed');
@@ -80,7 +102,7 @@ export function useBillPrint() {
         setPrinting(false);
       }
     },
-    [finishOk, runPrint],
+    [finishOk, runBrowserFallback, runEscPosPrint],
   );
 
   const confirmPrinter = useCallback(
@@ -89,15 +111,27 @@ export function useBillPrint() {
       setPrinting(true);
       setError(null);
       try {
-        await runPrint(printerName, pending);
+        saveDefaultPrinter(printerName);
+        await runEscPosPrint(printerName, pending);
         await finishOk();
       } catch (err) {
+        if (isQzUnavailableError(err)) {
+          try {
+            runBrowserFallback(pending);
+            await finishOk();
+            setError('QZ Tray offline — opened browser print instead');
+            return;
+          } catch (fallbackErr) {
+            setError(fallbackErr.message || 'Print failed');
+            return;
+          }
+        }
         setError(err.message || 'Print failed');
       } finally {
         setPrinting(false);
       }
     },
-    [finishOk, pending, runPrint],
+    [finishOk, pending, runBrowserFallback, runEscPosPrint],
   );
 
   const printerModal = (

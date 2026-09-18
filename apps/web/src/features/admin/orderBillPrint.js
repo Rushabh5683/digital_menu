@@ -1,4 +1,4 @@
-/** Shared helpers + PetPooja-style 80mm thermal bill HTML (same layout for every restaurant). */
+/** Shared bill helpers + ESC/POS thermal receipt (default 58mm) + HTML browser fallback. */
 
 export function formatMoney(value) {
   const n = Number(value || 0);
@@ -56,8 +56,230 @@ function escapeHtml(value) {
 
 const DEFAULT_THANKS = 'Thanks for visiting us. Drive safe. Stay healthy.';
 
+/** 58mm ≈ 32 cols; 80mm ≈ 42 cols (Epson/Star common widths). */
+export const THERMAL_COLS = {
+  '58': 32,
+  '80': 42,
+};
+
+function asciiSafe(value) {
+  return String(value ?? '')
+    .replace(/₹/g, 'Rs ')
+    .replace(/[—–]/g, '-')
+    .replace(/[”“]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, '...')
+    .replace(/[^\x20-\x7E\n]/g, '?');
+}
+
+function repeat(char, count) {
+  return String(char || '-').repeat(Math.max(0, count));
+}
+
+function wrapText(text, width) {
+  const raw = asciiSafe(text).trim();
+  if (!raw) return [];
+  const words = raw.split(/\s+/);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      if (word.length <= width) {
+        current = word;
+      } else {
+        for (let i = 0; i < word.length; i += width) {
+          lines.push(word.slice(i, i + width));
+        }
+        current = '';
+      }
+      continue;
+    }
+    if (`${current} ${word}`.length <= width) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      if (word.length <= width) {
+        current = word;
+      } else {
+        for (let i = 0; i < word.length; i += width) {
+          const chunk = word.slice(i, i + width);
+          if (i + width < word.length) lines.push(chunk);
+          else current = chunk;
+        }
+      }
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function leftRight(left, right, width) {
+  const l = asciiSafe(left);
+  const r = asciiSafe(right);
+  const space = width - l.length - r.length;
+  if (space >= 1) return `${l}${' '.repeat(space)}${r}`;
+  const maxLeft = Math.max(4, width - r.length - 1);
+  return `${l.slice(0, maxLeft)} ${r}`.slice(0, width);
+}
+
+function encodeUtf8ToBytes(str) {
+  return new TextEncoder().encode(str);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 /**
- * Fixed thermal receipt template (≈80mm). Only restaurant + order data changes.
+ * Build ESC/POS command bytes for a compact thermal bill.
+ * @param {{ restaurant: object, order: object, paperWidthMm?: 58 | 80 }} args
+ * @returns {{ base64: string, cols: number } | null}
+ */
+export function buildThermalBillEscPos({ restaurant, order, paperWidthMm = 58 } = {}) {
+  if (!order) return null;
+
+  const cols = paperWidthMm >= 80 ? THERMAL_COLS['80'] : THERMAL_COLS['58'];
+  const rule = repeat('-', cols);
+
+  const name = String(restaurant?.name || 'Restaurant').toUpperCase();
+  const address = restaurant?.address || '';
+  const phone = restaurant?.phone || '';
+  const gstin = restaurant?.gstin || '';
+  const fssai = restaurant?.fssaiLicense || '';
+  const thanks = restaurant?.billThanksMessage || DEFAULT_THANKS;
+
+  const tableNo =
+    order.tableNumber != null
+      ? String(order.tableNumber).padStart(2, '0')
+      : order.tableLabel?.replace(/\D/g, '') || '-';
+  const billNo = formatOrderDisplayNumber(order.orderNumber);
+  const createdAt = order.createdAt || order.placedAt || order.paidAt || new Date().toISOString();
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  const totalQty = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const subtotal = Number(order.subtotal) || 0;
+  const cgstRate = Number(order.cgstRate) || 0;
+  const sgstRate = Number(order.sgstRate) || 0;
+  const cgstAmount = Number(order.cgstAmount) || 0;
+  const sgstAmount = Number(order.sgstAmount) || 0;
+  const taxAmount = Number(order.taxAmount) || cgstAmount + sgstAmount;
+  const roundOff = Number(order.roundOffAmount) || 0;
+  const grand = Number(order.total) || 0;
+  const showTax = taxAmount > 0.001;
+  const roundLabel =
+    roundOff === 0 ? '0.00' : `${roundOff > 0 ? '+' : '-'}${formatBillAmount(Math.abs(roundOff))}`;
+
+  const chunks = [];
+  const pushCmd = (...nums) => chunks.push(Uint8Array.from(nums));
+  const pushText = (text) => chunks.push(encodeUtf8ToBytes(`${asciiSafe(text)}\n`));
+
+  pushCmd(0x1b, 0x40); // ESC @ init
+  pushCmd(0x1b, 0x61, 0x01); // center
+  pushCmd(0x1b, 0x45, 0x01); // bold on
+  // Double-size only when the name fits (~half of columns).
+  if (name.length <= Math.floor(cols / 2)) {
+    pushCmd(0x1d, 0x21, 0x11);
+    pushText(name);
+    pushCmd(0x1d, 0x21, 0x00);
+  } else {
+    for (const line of wrapText(name, cols)) pushText(line);
+  }
+  pushCmd(0x1b, 0x45, 0x00); // bold off
+
+  for (const line of wrapText(address, cols)) pushText(line);
+  if (phone) pushText(`Ph: ${phone}`);
+
+  pushCmd(0x1b, 0x61, 0x00); // left
+  pushText(rule);
+  pushText('Name: ____________________'.slice(0, cols));
+  pushText(leftRight(`Date: ${formatBillDate(createdAt)}`, `Dine: ${tableNo}`, cols));
+  pushText(leftRight(`Time: ${formatClock(createdAt)}`, `Bill: ${billNo}`, cols));
+  pushText(rule);
+
+  const amtW = 7;
+  const priceW = 6;
+  const qtyW = 3;
+  const itemW = Math.max(8, cols - amtW - priceW - qtyW - 3);
+
+  pushText(
+    `${'Item'.padEnd(itemW)} ${'Qty'.padStart(qtyW)} ${'Price'.padStart(priceW)} ${'Amt'.padStart(amtW)}`,
+  );
+  pushText(rule);
+
+  items.forEach((item, index) => {
+    const qty = Number(item.quantity) || 0;
+    const price = Number(item.priceSnapshot) || 0;
+    const amount = Number(item.subtotal) || qty * price;
+    const title = `${index + 1}. ${item.dishNameSnapshot || item.dishName || 'Item'}`;
+    const wrapped = wrapText(title, itemW);
+    const first = wrapped[0] || `${index + 1}.`;
+    const qtyStr = String(qty).padStart(qtyW);
+    const priceStr = formatBillAmount(price).replace(/,/g, '').padStart(priceW);
+    const amtStr = formatBillAmount(amount).replace(/,/g, '').padStart(amtW);
+    pushText(`${first.padEnd(itemW)} ${qtyStr} ${priceStr} ${amtStr}`);
+    for (let i = 1; i < wrapped.length; i += 1) {
+      pushText(wrapped[i].padEnd(itemW).slice(0, cols));
+    }
+  });
+
+  if (!items.length) pushText('No items');
+
+  pushText(rule);
+  pushText(leftRight(`Total Qty: ${totalQty}`, `Sub ${formatBillAmount(subtotal).replace(/,/g, '')}`, cols));
+
+  if (showTax) {
+    pushText(
+      leftRight(
+        `${formatBillAmount(subtotal).replace(/,/g, '')}@CGST ${cgstRate}%`,
+        formatBillAmount(cgstAmount).replace(/,/g, ''),
+        cols,
+      ),
+    );
+    pushText(
+      leftRight(
+        `${formatBillAmount(subtotal).replace(/,/g, '')}@SGST ${sgstRate}%`,
+        formatBillAmount(sgstAmount).replace(/,/g, ''),
+        cols,
+      ),
+    );
+  }
+
+  pushText(leftRight('Round off', roundLabel.replace(/,/g, ''), cols));
+  pushCmd(0x1b, 0x45, 0x01);
+  pushText(leftRight('TOTAL Rs', formatBillAmount(grand).replace(/,/g, ''), cols));
+  pushCmd(0x1b, 0x45, 0x00);
+  pushText(rule);
+
+  pushCmd(0x1b, 0x61, 0x01); // center footer
+  if (fssai) for (const line of wrapText(`FSSAI: ${fssai}`, cols)) pushText(line);
+  if (gstin) for (const line of wrapText(`GSTIN: ${gstin}`, cols)) pushText(line);
+  for (const line of wrapText(thanks, cols)) pushText(line);
+  pushText('');
+  pushText('');
+
+  // Partial cut (ignored if unsupported)
+  pushCmd(0x1d, 0x56, 0x01);
+
+  let totalLen = 0;
+  for (const part of chunks) totalLen += part.length;
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const part of chunks) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+
+  return { base64: bytesToBase64(out), cols, paperWidthMm };
+}
+
+/**
+ * HTML fallback for browser print dialog (when QZ is unavailable).
+ * Compact pixel width aimed at 58mm thermal preview.
  */
 export function buildThermalBillHtml({ restaurant, order }) {
   if (!order) return '';
@@ -113,51 +335,41 @@ export function buildThermalBillHtml({ restaurant, order }) {
   <meta charset="utf-8" />
   <title>Bill #${escapeHtml(billNo)}</title>
   <style>
-    @page { size: 80mm auto; margin: 0; }
+    @page { size: 58mm auto; margin: 0; }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
-      width: 80mm;
-      max-width: 80mm;
+      width: 384px;
+      max-width: 384px;
       font-family: "Courier New", Courier, monospace;
-      font-size: 11px;
+      font-size: 12px;
+      line-height: 1.25;
       color: #000;
       background: #fff;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
     }
-    .receipt { width: 72mm; margin: 0 auto; padding: 3mm 2mm 6mm; }
+    .receipt { width: 360px; margin: 0 auto; padding: 8px 6px 16px; }
     .center { text-align: center; }
-    .bold { font-weight: 700; }
-    .title { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
-    .muted { font-size: 10px; line-height: 1.35; }
+    .title { font-size: 15px; font-weight: 700; text-transform: uppercase; }
+    .muted { font-size: 11px; }
     .rule { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    .rule-solid { border: none; border-top: 1px solid #000; margin: 6px 0; }
-    .meta { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .meta { width: 100%; border-collapse: collapse; font-size: 11px; }
     .meta td { vertical-align: top; padding: 1px 0; }
     .meta .r { text-align: right; }
     table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    table.items th, table.items td { padding: 2px 0; vertical-align: top; font-size: 10px; }
-    table.items th { font-size: 9px; border-bottom: 1px solid #000; text-align: left; }
-    .c-no { width: 5mm; }
+    table.items th, table.items td { padding: 2px 0; vertical-align: top; font-size: 11px; }
+    table.items th { font-size: 10px; border-bottom: 1px solid #000; text-align: left; }
+    .c-no { width: 18px; }
     .c-item { width: auto; word-wrap: break-word; }
-    .c-qty { width: 8mm; text-align: center; }
-    .c-price { width: 14mm; text-align: right; }
-    .c-amt { width: 16mm; text-align: right; }
-    .totals { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 4px; }
+    .c-qty { width: 28px; text-align: center; }
+    .c-price { width: 54px; text-align: right; }
+    .c-amt { width: 58px; text-align: right; }
+    .totals { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
     .totals td { padding: 1px 0; }
     .totals .l { text-align: left; }
     .totals .r { text-align: right; }
-    .grand {
-      font-size: 13px;
-      font-weight: 700;
-      border-top: 1px solid #000;
-      border-bottom: 1px solid #000;
-      padding: 5px 0 !important;
-      margin-top: 4px;
-    }
-    .foot { margin-top: 8px; font-size: 10px; line-height: 1.4; }
+    .grand { font-size: 13px; font-weight: 700; padding-top: 4px !important; }
+    .foot { margin-top: 8px; font-size: 11px; line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -221,7 +433,7 @@ export function buildThermalBillHtml({ restaurant, order }) {
         <td class="r">${escapeHtml(roundLabel)}</td>
       </tr>
       <tr>
-        <td class="l grand">Grand Total ₹</td>
+        <td class="l grand">Grand Total Rs</td>
         <td class="r grand">${escapeHtml(formatBillAmount(grand))}</td>
       </tr>
     </table>
@@ -236,7 +448,7 @@ export function buildThermalBillHtml({ restaurant, order }) {
 </html>`;
 }
 
-/** @deprecated use printBillWithQz / buildThermalBillHtml */
+/** @deprecated use printBillWithQz / buildThermalBillEscPos */
 export function printOrderBill({ restaurant, order }) {
   const html = buildThermalBillHtml({ restaurant, order });
   if (!html) return;
