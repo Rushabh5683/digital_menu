@@ -102,11 +102,11 @@ img {
 @keyframes menu-swipe-up-in {
   from {
     opacity: 0;
-    transform: translateY(28px);
+    transform: translateY(36px) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 

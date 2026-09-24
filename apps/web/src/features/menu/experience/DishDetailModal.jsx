@@ -251,6 +251,7 @@ export function DishDetailModal({
             className="absolute inset-0 cursor-default bg-stone-900/40"
             aria-label="Close dish detail"
             onClick={onClose}
+            style={swipe.backdropStyle}
           />
           <motion.div
             initial={{ opacity: 0, y: 40 }}

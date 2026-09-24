@@ -148,6 +148,7 @@ export function ComparisonModal({
             className="absolute inset-0 cursor-default bg-stone-900/40"
             aria-label="Close comparison"
             onClick={onClose}
+            style={swipe.backdropStyle}
           />
 
           <motion.div

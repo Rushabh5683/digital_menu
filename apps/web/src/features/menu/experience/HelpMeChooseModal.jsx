@@ -98,6 +98,7 @@ export function HelpMeChooseModal({
           className="absolute inset-0 cursor-default bg-stone-900/40"
           aria-label="Close Help Me Choose"
           onClick={onClose}
+          style={swipe.backdropStyle}
         />
 
         <motion.div

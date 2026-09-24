@@ -160,6 +160,7 @@ export function CartDrawer({
         className="drawer-backdrop absolute inset-0 bg-stone-900/40"
         aria-label="Close cart"
         onClick={handleClose}
+        style={swipe.backdropStyle}
       />
 
       <div

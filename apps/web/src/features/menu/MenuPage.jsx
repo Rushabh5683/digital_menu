@@ -611,7 +611,7 @@ export function MenuPage() {
       className={['guest-menu guest-menu--experience', bottomPad].join(' ')}
       style={
         menuFadeIn
-          ? { animation: 'menu-swipe-up-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both' }
+          ? { animation: 'menu-swipe-up-in 0.72s cubic-bezier(0.16, 1, 0.3, 1) both' }
           : undefined
       }
       onAnimationEnd={(event) => {
