@@ -42,7 +42,6 @@ export function ExperienceDishCard({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-20px' }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      whileTap={{ scale: 0.99 }}
       id={`dish-card-${dish.id}`}
       data-dish-id={dish.id}
       onClick={() => onOpenDetail?.(dish)}
