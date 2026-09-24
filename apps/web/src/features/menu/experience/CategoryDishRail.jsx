@@ -6,6 +6,25 @@ import { categoryShowsSteam } from './DishSteam.jsx';
 import { getDietMarker } from '../../../shared/constants/dietaryTags.js';
 
 const DIET_CYCLE = ['all', 'veg', 'non-veg'];
+const DOT_SCRUB_PX = 26;
+const MAX_VISIBLE_DOTS = 6;
+const DOT_SLOT_PX = 16; // h-4 w-4
+const DOT_GAP_PX = 8; // gap-2
+const DOT_PAD_X_PX = 10; // px-2.5
+const DOTS_VIEWPORT_PX =
+  MAX_VISIBLE_DOTS * DOT_SLOT_PX +
+  (MAX_VISIBLE_DOTS - 1) * DOT_GAP_PX +
+  DOT_PAD_X_PX * 2;
+
+function lightHaptic(ms = 10) {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(ms);
+    }
+  } catch {
+    /* ignore unsupported */
+  }
+}
 
 function DietLiquidToggle({ value, onChange }) {
   const position = value === 'veg' ? 0 : value === 'non-veg' ? 2 : 1;
@@ -79,6 +98,11 @@ export function CategoryDishRail({
   const [activeIndex, setActiveIndex] = useState(0);
   const [dietFilter, setDietFilter] = useState('all');
   const steamForCategory = categoryShowsSteam(category?.name);
+  const activeIndexRef = useRef(0);
+  const dotsScrubRef = useRef(null);
+  const dotsTrackRef = useRef(null);
+  const lastHapticIndexRef = useRef(-1);
+  const wheelLockRef = useRef(false);
 
   const dietAvailability = useMemo(() => {
     let hasVeg = false;
@@ -107,7 +131,9 @@ export function CategoryDishRail({
     if (!el) return;
     const width = el.clientWidth || 1;
     const index = Math.round(el.scrollLeft / width);
-    setActiveIndex(Math.max(0, Math.min(Math.max(visibleDishes.length - 1, 0), index)));
+    const next = Math.max(0, Math.min(Math.max(visibleDishes.length - 1, 0), index));
+    activeIndexRef.current = next;
+    setActiveIndex(next);
   }, [visibleDishes.length]);
 
   useEffect(() => {
@@ -120,25 +146,99 @@ export function CategoryDishRail({
     const el = scrollContainerRef.current;
     if (el) el.scrollTo({ left: 0, behavior: 'smooth' });
     setActiveIndex(0);
+    activeIndexRef.current = 0;
+    lastHapticIndexRef.current = -1;
+    if (dotsTrackRef.current) dotsTrackRef.current.scrollLeft = 0;
   }, [dietFilter, category?.id]);
 
-  const scrollToIndex = (index) => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const next = Math.max(0, Math.min(visibleDishes.length - 1, index));
-    el.scrollTo({
-      left: next * el.clientWidth,
+  useEffect(() => {
+    const track = dotsTrackRef.current;
+    if (!track || visibleDishes.length <= MAX_VISIBLE_DOTS) return;
+    const btn = track.querySelector(`[data-dot-index="${activeIndex}"]`);
+    if (!btn) return;
+    const target =
+      btn.offsetLeft - track.clientWidth / 2 + btn.offsetWidth / 2;
+    track.scrollTo({
+      left: Math.max(0, target),
       behavior: 'smooth',
     });
-  };
+  }, [activeIndex, visibleDishes.length]);
+
+  const scrollToIndex = useCallback(
+    (index, { haptic = false } = {}) => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const next = Math.max(0, Math.min(visibleDishes.length - 1, index));
+      if (next !== activeIndexRef.current) {
+        activeIndexRef.current = next;
+        setActiveIndex(next);
+        if (haptic && next !== lastHapticIndexRef.current) {
+          lastHapticIndexRef.current = next;
+          lightHaptic(12);
+        }
+      }
+      el.scrollTo({
+        left: next * el.clientWidth,
+        behavior: 'smooth',
+      });
+    },
+    [visibleDishes.length],
+  );
 
   const onDotsWheel = (event) => {
-    const el = scrollContainerRef.current;
-    if (!el || visibleDishes.length < 2) return;
+    if (visibleDishes.length < 2) return;
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
     if (!delta) return;
     event.preventDefault();
-    el.scrollBy({ left: delta, behavior: 'smooth' });
+    if (wheelLockRef.current) return;
+    wheelLockRef.current = true;
+    window.setTimeout(() => {
+      wheelLockRef.current = false;
+    }, 140);
+    const dir = delta > 0 ? 1 : -1;
+    scrollToIndex(activeIndexRef.current + dir, { haptic: true });
+  };
+
+  const onDotsPointerDown = (event) => {
+    if (visibleDishes.length < 2) return;
+    if (event.button != null && event.button !== 0) return;
+    dotsScrubRef.current = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startIndex: activeIndexRef.current,
+    };
+    lastHapticIndexRef.current = activeIndexRef.current;
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onDotsPointerMove = (event) => {
+    const scrub = dotsScrubRef.current;
+    if (!scrub || event.pointerId !== scrub.id) return;
+    const dx = event.clientX - scrub.startX;
+    if (Math.abs(dx) < 8) return;
+    const steps = Math.round(dx / DOT_SCRUB_PX);
+    const next = Math.max(
+      0,
+      Math.min(visibleDishes.length - 1, scrub.startIndex + steps),
+    );
+    if (next !== activeIndexRef.current) {
+      scrollToIndex(next, { haptic: true });
+    }
+  };
+
+  const onDotsPointerEnd = (event) => {
+    const scrub = dotsScrubRef.current;
+    if (!scrub || (event.pointerId != null && event.pointerId !== scrub.id)) return;
+    try {
+      event.currentTarget.releasePointerCapture?.(scrub.id);
+    } catch {
+      /* ignore */
+    }
+    dotsScrubRef.current = null;
   };
 
   if (!category || dishes.length === 0) return null;
@@ -228,12 +328,28 @@ export function CategoryDishRail({
 
         {showDots ? (
           <div
-            className="flex justify-center px-4 pb-1 pt-2"
+            className="flex justify-center px-4 pb-1 pt-2 touch-pan-y"
             onWheel={onDotsWheel}
             role="tablist"
             aria-label={`${category.name} dishes`}
           >
-            <div className="relative inline-flex max-w-full items-center gap-2 overflow-x-auto rounded-full bg-stone-200/70 px-2.5 py-1.5 no-scrollbar">
+            <div
+              ref={dotsTrackRef}
+              className="relative inline-flex touch-none items-center gap-2 overflow-x-auto scroll-smooth rounded-full bg-stone-200/70 px-2.5 py-1.5 no-scrollbar"
+              style={{
+                width: Math.min(
+                  DOTS_VIEWPORT_PX,
+                  visibleDishes.length * DOT_SLOT_PX +
+                    Math.max(0, visibleDishes.length - 1) * DOT_GAP_PX +
+                    DOT_PAD_X_PX * 2,
+                ),
+                maxWidth: DOTS_VIEWPORT_PX,
+              }}
+              onPointerDown={onDotsPointerDown}
+              onPointerMove={onDotsPointerMove}
+              onPointerUp={onDotsPointerEnd}
+              onPointerCancel={onDotsPointerEnd}
+            >
               {visibleDishes.map((dish, index) => {
                 const active = index === activeIndex;
                 return (
@@ -241,10 +357,11 @@ export function CategoryDishRail({
                     key={dish.id}
                     type="button"
                     role="tab"
+                    data-dot-index={index}
                     aria-selected={active}
                     aria-label={`Show ${dish.name || `dish ${index + 1}`}`}
                     title={dish.name || `Dish ${index + 1}`}
-                    onClick={() => scrollToIndex(index)}
+                    onClick={() => scrollToIndex(index, { haptic: true })}
                     className="relative z-[1] flex h-4 w-4 shrink-0 items-center justify-center"
                   >
                     {active ? (

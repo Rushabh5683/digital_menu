@@ -4,13 +4,14 @@ import { ChevronUp, Pause, Sparkles } from 'lucide-react';
 import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 const SPLASH_MS = 4200;
-const EXIT_MS = 580;
+const EXIT_MS = 720;
 const ACCENT = '#E85D24';
 const INK = '#1C1917';
 const MUTED = '#78716C';
 const BG = '#FAF8F5';
-const SWIPE_THRESHOLD = 78;
-const SWIPE_ARM = 10;
+const SWIPE_THRESHOLD = 52;
+const SWIPE_ARM = 8;
+const EXIT_EASE = [0.16, 1, 0.3, 1];
 
 function shortLocation(address) {
   if (!address || typeof address !== 'string') return null;
@@ -126,6 +127,7 @@ export function MenuEntrySplash({
   const [entered, setEntered] = useState(false);
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [exitMode, setExitMode] = useState(null); // 'swipe' | 'fade'
   const enteredRef = useRef(false);
   const remainingRef = useRef(durationMs);
   const lastTickRef = useRef(null);
@@ -138,12 +140,20 @@ export function MenuEntrySplash({
   const finishEnter = (fromSwipe = false) => {
     if (enteredRef.current) return;
     enteredRef.current = true;
+    // Stop the auto-enter timer immediately so swipe/skip never waits on the bar
+    timerDoneRef.current = true;
+    remainingRef.current = 0;
+    setRemainingMs(0);
+    setTimerDone(true);
     setHolding(false);
     setDragging(false);
+    swipingRef.current = false;
+    setExitMode(fromSwipe ? 'swipe' : 'fade');
+    const lift = fromSwipe
+      ? -Math.round(window.innerHeight * 1.05)
+      : -Math.round(Math.min(window.innerHeight * 0.22, 180));
+    setDragY(lift);
     setExiting(true);
-    if (fromSwipe) {
-      setDragY(-Math.max(window.innerHeight * 0.55, 280));
-    }
     window.setTimeout(() => {
       setEntered(true);
       onEnter?.();
@@ -151,14 +161,14 @@ export function MenuEntrySplash({
   };
 
   useEffect(() => {
-    if (timerDone && canFinish && !exiting) {
+    if (timerDone && canFinish && !exiting && !enteredRef.current) {
       finishEnter(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerDone, canFinish, exiting]);
 
   useEffect(() => {
-    if (holding || exiting || timerDoneRef.current || dragging) {
+    if (holding || exiting || timerDoneRef.current || dragging || enteredRef.current) {
       lastTickRef.current = null;
       return undefined;
     }
@@ -167,6 +177,7 @@ export function MenuEntrySplash({
     let frameId = 0;
 
     const tick = (now) => {
+      if (enteredRef.current || timerDoneRef.current) return;
       const last = lastTickRef.current ?? now;
       lastTickRef.current = now;
       const next = Math.max(0, remainingRef.current - (now - last));
@@ -199,7 +210,7 @@ export function MenuEntrySplash({
   const logoSrc = resolveMediaUrl(restaurant?.logo || restaurant?.logoUrl || '') || null;
 
   const setHold = (value) => {
-    if (exiting || timerDoneRef.current || swipingRef.current) return;
+    if (exiting || enteredRef.current || timerDoneRef.current || swipingRef.current) return;
     setHolding(value);
   };
 
@@ -240,20 +251,36 @@ export function MenuEntrySplash({
     }
     if (!swipingRef.current) return;
 
-    const next = -Math.min(Math.max(delta, 0) * 0.92, window.innerHeight * 0.42);
+    const raw = Math.max(delta, 0);
+    // Ease resistance so the sheet feels weighted while dragging
+    const resisted = raw * (1 - Math.min(raw / (window.innerHeight * 1.8), 0.35));
+    const next = -Math.min(resisted, window.innerHeight * 0.55);
     dragYRef.current = next;
     setDragY(next);
+
+    // Commit as soon as the swipe clears the threshold (don't wait for release)
+    if (raw >= SWIPE_THRESHOLD) {
+      try {
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+      } catch {
+        /* ignore */
+      }
+      pointerIdRef.current = null;
+      finishEnter(true);
+    }
   };
 
   const onSwipePointerEnd = (event) => {
+    if (enteredRef.current) return;
     if (pointerIdRef.current == null || event.pointerId !== pointerIdRef.current) return;
     const traveled = -dragYRef.current;
-    const shouldEnter = swipingRef.current && traveled >= SWIPE_THRESHOLD;
+    const shouldEnter = swipingRef.current && traveled >= SWIPE_THRESHOLD * 0.75;
     try {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     } catch {
       /* ignore */
     }
+    pointerIdRef.current = null;
     if (shouldEnter) {
       finishEnter(true);
       return;
@@ -272,27 +299,47 @@ export function MenuEntrySplash({
     onPointerLeave: () => setHold(false),
   };
 
-  const exitOpacity = exiting
-    ? 0
-    : dragging
-      ? Math.max(0.35, 1 + dragY / 260)
-      : 1;
-  const sheetTransform = exiting
-    ? `translate3d(0, ${dragY < -40 ? dragY : -Math.max(window.innerHeight * 0.18, 120)}px, 0) scale(0.985)`
-    : `translate3d(0, ${dragY}px, 0)`;
+  const dragProgress = Math.min(1, Math.abs(Math.min(dragY, 0)) / 160);
+  const shellAnimate = exiting
+    ? {
+        y: dragY,
+        opacity: 0,
+        scale: exitMode === 'swipe' ? 0.94 : 0.975,
+        filter: exitMode === 'swipe' ? 'blur(8px)' : 'blur(4px)',
+      }
+    : {
+        y: dragY,
+        opacity: dragging ? Math.max(0.5, 1 - dragProgress * 0.4) : 1,
+        scale: dragging ? 1 - dragProgress * 0.025 : 1,
+        filter: 'blur(0px)',
+      };
+
+  const shellTransition = dragging
+    ? { type: 'tween', duration: 0 }
+    : exiting
+      ? {
+          y: { duration: EXIT_MS / 1000, ease: EXIT_EASE },
+          opacity: { duration: EXIT_MS / 1000, ease: [0.4, 0, 0.2, 1] },
+          scale: { duration: EXIT_MS / 1000, ease: EXIT_EASE },
+          filter: { duration: EXIT_MS / 1000, ease: 'easeOut' },
+        }
+      : {
+          type: 'spring',
+          stiffness: 420,
+          damping: 34,
+          mass: 0.8,
+        };
 
   return (
-    <div
+    <motion.div
       className="guest-menu guest-menu--experience fixed inset-0 z-[80] select-none touch-manipulation"
+      initial={false}
+      animate={shellAnimate}
+      transition={shellTransition}
       style={{
-        opacity: exitOpacity,
-        transform: sheetTransform,
-        transition: dragging
-          ? 'none'
-          : `opacity ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
         pointerEvents: exiting ? 'none' : 'auto',
         background: BG,
-        willChange: 'transform, opacity',
+        willChange: 'transform, opacity, filter',
       }}
       {...holdHandlers}
     >
@@ -441,7 +488,7 @@ export function MenuEntrySplash({
           <div className="w-full space-y-2.5" aria-live="polite">
             <div className="h-[3px] overflow-hidden rounded-full bg-stone-200">
               <div
-                className="h-full rounded-full"
+                className="h-full rounded-full transition-[width] duration-100 ease-linear"
                 style={{
                   width: `${Math.min(100, progress * 100)}%`,
                   background: ACCENT,
@@ -473,14 +520,14 @@ export function MenuEntrySplash({
         @keyframes menu-splash-in {
           from {
             opacity: 0;
-            transform: translateY(10px);
+            transform: translateY(14px) scale(0.985);
           }
           to {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
           }
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 }

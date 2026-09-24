@@ -1,11 +1,15 @@
 import { useCallback, useRef, useState } from 'react';
 
-const DEFAULT_THRESHOLD = 108;
-const DEFAULT_VELOCITY = 0.7; // px/ms
+const DEFAULT_THRESHOLD = 100;
+const DEFAULT_VELOCITY = 0.65; // px/ms
+const EXIT_MS = 420;
+const SNAP_MS = 380;
+const EXIT_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+const FADE_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
 /**
  * One-finger swipe-down dismiss for guest menu bottom sheets.
- * No UI — attach handleProps / scrollProps / panelStyle to existing elements.
+ * Plays a full slide-away + fade before calling onClose so the close feels clear.
  */
 export function useSheetSwipeDismiss(
   onClose,
@@ -14,19 +18,54 @@ export function useSheetSwipeDismiss(
   const scrollRef = useRef(null);
   const [offsetY, setOffsetY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const sessionRef = useRef(null);
   const offsetRef = useRef(0);
   const lastYRef = useRef(0);
   const lastTRef = useRef(0);
   const velocityRef = useRef(0);
+  const dismissingRef = useRef(false);
+  const closeTimerRef = useRef(null);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const playExitThenClose = useCallback(() => {
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    setDismissing(true);
+    setDragging(false);
+    sessionRef.current = null;
+
+    const exitY =
+      typeof window !== 'undefined'
+        ? Math.round(window.innerHeight * 1.05)
+        : 900;
+    offsetRef.current = exitY;
+    setOffsetY(exitY);
+
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose?.();
+      // Reset for next open if the host stays mounted
+      dismissingRef.current = false;
+      setDismissing(false);
+      offsetRef.current = 0;
+      setOffsetY(0);
+    }, EXIT_MS);
+  }, [clearCloseTimer, onClose]);
 
   const endSession = useCallback(
     (shouldClose) => {
       sessionRef.current = null;
       setDragging(false);
       if (shouldClose) {
-        setOffsetY((current) => Math.max(current, threshold + 48));
-        onClose?.();
+        playExitThenClose();
         return;
       }
       requestAnimationFrame(() => {
@@ -34,12 +73,12 @@ export function useSheetSwipeDismiss(
         setOffsetY(0);
       });
     },
-    [onClose, threshold],
+    [playExitThenClose],
   );
 
   const begin = useCallback(
     (event, { force = false } = {}) => {
-      if (!enabled) return;
+      if (!enabled || dismissingRef.current) return;
       if (event.button != null && event.button !== 0) return;
       if (event.isPrimary === false) return;
 
@@ -69,6 +108,7 @@ export function useSheetSwipeDismiss(
   );
 
   const move = useCallback((event) => {
+    if (dismissingRef.current) return;
     const session = sessionRef.current;
     if (!session || event.pointerId !== session.id) return;
 
@@ -106,8 +146,10 @@ export function useSheetSwipeDismiss(
       return;
     }
 
-    const max = typeof window !== 'undefined' ? window.innerHeight * 0.6 : 420;
-    const next = Math.min(dy * 0.94, max);
+    const max = typeof window !== 'undefined' ? window.innerHeight * 0.65 : 480;
+    // Weighted resistance so the sheet feels substantial
+    const resisted = dy * (1 - Math.min(dy / (max * 2.2), 0.28));
+    const next = Math.min(resisted, max);
     offsetRef.current = next;
     setOffsetY(next);
 
@@ -118,6 +160,7 @@ export function useSheetSwipeDismiss(
 
   const end = useCallback(
     (event) => {
+      if (dismissingRef.current) return;
       const session = sessionRef.current;
       if (!session) return;
       if (event && event.pointerId != null && event.pointerId !== session.id) return;
@@ -151,22 +194,39 @@ export function useSheetSwipeDismiss(
     onPointerCancel: end,
   };
 
-  const panelStyle =
-    offsetY > 0 || dragging
-      ? {
-          transform: `translate3d(0, ${offsetY}px, 0)`,
-          transition: dragging
-            ? 'none'
-            : 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
-          willChange: 'transform',
-        }
-      : undefined;
+  const progress = Math.min(1, offsetY / Math.max(threshold, 1));
+  const active = offsetY > 0 || dragging || dismissing;
+
+  const panelStyle = active
+    ? {
+        transform: `translate3d(0, ${offsetY}px, 0) scale(${1 - Math.min(progress, 1) * 0.035})`,
+        opacity: dismissing ? 0 : Math.max(0.4, 1 - progress * 0.5),
+        transition: dragging
+          ? 'none'
+          : [
+              `transform ${dismissing ? EXIT_MS : SNAP_MS}ms ${EXIT_EASE}`,
+              `opacity ${dismissing ? EXIT_MS : SNAP_MS}ms ${FADE_EASE}`,
+            ].join(', '),
+        willChange: 'transform, opacity',
+      }
+    : undefined;
+
+  const backdropStyle = active
+    ? {
+        opacity: dismissing ? 0 : Math.max(0.12, 1 - progress * 0.9),
+        transition: dragging
+          ? 'none'
+          : `opacity ${dismissing ? EXIT_MS : SNAP_MS}ms ${FADE_EASE}`,
+      }
+    : undefined;
 
   return {
     scrollRef,
     offsetY,
     dragging,
+    dismissing,
     panelStyle,
+    backdropStyle,
     handleProps,
     scrollProps,
   };
