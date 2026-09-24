@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, animate } from 'framer-motion';
 import { ExperienceDishCard } from './ExperienceDishCard.jsx';
 import { useCategoryAttention } from '../../analytics/useCategoryAttention.js';
 import { categoryShowsSteam } from './DishSteam.jsx';
@@ -15,6 +15,13 @@ const DOTS_VIEWPORT_PX =
   MAX_VISIBLE_DOTS * DOT_SLOT_PX +
   (MAX_VISIBLE_DOTS - 1) * DOT_GAP_PX +
   DOT_PAD_X_PX * 2;
+
+/** Axis lock + commit thresholds for the dish slider. */
+const AXIS_LOCK_PX = 10;
+const COMMIT_RATIO = 0.18;
+const COMMIT_MIN_PX = 48;
+const FLICK_VELOCITY = 0.42; // px/ms
+const SNAP_SPRING = { type: 'spring', stiffness: 420, damping: 38, mass: 0.82 };
 
 function lightHaptic(ms = 10) {
   try {
@@ -79,6 +86,15 @@ function categoryIsSingleDietNamed(categoryName = '') {
   return isNonVegNamed || isVegNamed;
 }
 
+function isInteractiveTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      'button, a, input, select, textarea, [role="button"], [data-no-swipe]',
+    ),
+  );
+}
+
 export function CategoryDishRail({
   category,
   dishes = [],
@@ -94,15 +110,20 @@ export function CategoryDishRail({
   currency = 'INR',
 }) {
   const sectionAttentionRef = useCategoryAttention(category?.id);
-  const scrollContainerRef = useRef(null);
+  const viewportRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dietFilter, setDietFilter] = useState('all');
   const steamForCategory = categoryShowsSteam(category?.name);
   const activeIndexRef = useRef(0);
+  const widthRef = useRef(0);
   const dotsScrubRef = useRef(null);
   const dotsTrackRef = useRef(null);
   const lastHapticIndexRef = useRef(-1);
   const wheelLockRef = useRef(false);
+  const gestureRef = useRef(null);
+  const animRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const x = useMotionValue(0);
 
   const dietAvailability = useMemo(() => {
     let hasVeg = false;
@@ -126,30 +147,96 @@ export function CategoryDishRail({
     return (dishes || []).filter((dish) => getDietMarker(dish.dietaryTags) === dietFilter);
   }, [dishes, dietFilter, showDietToggle]);
 
-  const syncScrollState = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const width = el.clientWidth || 1;
-    const index = Math.round(el.scrollLeft / width);
+  const stopAnim = useCallback(() => {
+    if (animRef.current) {
+      animRef.current.stop();
+      animRef.current = null;
+    }
+  }, []);
+
+  const measureWidth = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return 0;
+    const w = el.clientWidth || 0;
+    widthRef.current = w;
+    return w;
+  }, []);
+
+  const setIndex = useCallback((index, { haptic = false } = {}) => {
     const next = Math.max(0, Math.min(Math.max(visibleDishes.length - 1, 0), index));
-    activeIndexRef.current = next;
-    setActiveIndex(next);
+    if (next !== activeIndexRef.current) {
+      activeIndexRef.current = next;
+      setActiveIndex(next);
+      if (haptic && next !== lastHapticIndexRef.current) {
+        lastHapticIndexRef.current = next;
+        lightHaptic(12);
+      }
+    } else {
+      activeIndexRef.current = next;
+    }
+    return next;
   }, [visibleDishes.length]);
 
-  useEffect(() => {
-    syncScrollState();
-    window.addEventListener('resize', syncScrollState);
-    return () => window.removeEventListener('resize', syncScrollState);
-  }, [syncScrollState, visibleDishes]);
+  const snapToIndex = useCallback(
+    (index, { haptic = false, velocity = 0 } = {}) => {
+      const width = widthRef.current || measureWidth() || 1;
+      const next = setIndex(index, { haptic });
+      stopAnim();
+      animRef.current = animate(x, -next * width, {
+        ...SNAP_SPRING,
+        velocity,
+        onComplete: () => {
+          animRef.current = null;
+          // Hard-settle to exact slot (avoids spring undershoot desync)
+          x.set(-next * width);
+        },
+      });
+    },
+    [measureWidth, setIndex, stopAnim, x],
+  );
 
   useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (el) el.scrollTo({ left: 0, behavior: 'smooth' });
+    const el = viewportRef.current;
+    if (!el) return undefined;
+    const sync = () => {
+      const w = measureWidth();
+      if (!w) return;
+      // Don't fight an active drag; resize will settle on pointer up.
+      if (gestureRef.current?.mode === 'horizontal') {
+        widthRef.current = w;
+        return;
+      }
+      stopAnim();
+      x.set(-activeIndexRef.current * w);
+    };
+    sync();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', sync);
+
+    // Non-passive so horizontal lock can block vertical page scroll mid-gesture.
+    const onTouchMove = (event) => {
+      if (gestureRef.current?.mode === 'horizontal' && event.cancelable) {
+        event.preventDefault();
+      }
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', sync);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [measureWidth, stopAnim, x, visibleDishes.length]);
+
+  useEffect(() => {
+    stopAnim();
     setActiveIndex(0);
     activeIndexRef.current = 0;
     lastHapticIndexRef.current = -1;
+    x.set(0);
     if (dotsTrackRef.current) dotsTrackRef.current.scrollLeft = 0;
-  }, [dietFilter, category?.id]);
+  }, [dietFilter, category?.id, stopAnim, x]);
 
   useEffect(() => {
     const track = dotsTrackRef.current;
@@ -166,23 +253,9 @@ export function CategoryDishRail({
 
   const scrollToIndex = useCallback(
     (index, { haptic = false } = {}) => {
-      const el = scrollContainerRef.current;
-      if (!el) return;
-      const next = Math.max(0, Math.min(visibleDishes.length - 1, index));
-      if (next !== activeIndexRef.current) {
-        activeIndexRef.current = next;
-        setActiveIndex(next);
-        if (haptic && next !== lastHapticIndexRef.current) {
-          lastHapticIndexRef.current = next;
-          lightHaptic(12);
-        }
-      }
-      el.scrollTo({
-        left: next * el.clientWidth,
-        behavior: 'smooth',
-      });
+      snapToIndex(index, { haptic });
     },
-    [visibleDishes.length],
+    [snapToIndex],
   );
 
   const onDotsWheel = (event) => {
@@ -239,6 +312,145 @@ export function CategoryDishRail({
       /* ignore */
     }
     dotsScrubRef.current = null;
+  };
+
+  const onRailPointerDown = (event) => {
+    if (visibleDishes.length < 2) return;
+    if (event.button != null && event.button !== 0) return;
+    if (event.isPrimary === false) return;
+    // Let native controls keep their own gesture; page scroll stays free.
+    if (isInteractiveTarget(event.target)) return;
+
+    gestureRef.current = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastT: event.timeStamp || performance.now(),
+      originX: x.get(),
+      mode: null, // null | 'horizontal' | 'vertical'
+      velocity: 0,
+      captured: false,
+      finishing: false,
+    };
+  };
+
+  const onRailPointerMove = (event) => {
+    const g = gestureRef.current;
+    if (!g || g.finishing || event.pointerId !== g.id) return;
+
+    const dx = event.clientX - g.startX;
+    const dy = event.clientY - g.startY;
+    const now = event.timeStamp || performance.now();
+    const dt = Math.max(1, now - g.lastT);
+    const frameDx = event.clientX - g.lastX;
+    // EMA so one noisy frame does not decide flick direction.
+    g.velocity = g.velocity * 0.6 + (frameDx / dt) * 0.4;
+    g.lastX = event.clientX;
+    g.lastT = now;
+
+    if (!g.mode) {
+      if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
+      if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+        g.mode = 'horizontal';
+        suppressClickRef.current = true;
+        // Interrupt only after horizontal intent — vertical page scroll stays untouched.
+        stopAnim();
+        const width = measureWidth() || 1;
+        const currentX = x.get();
+        g.originX = currentX;
+        const baseIndex = Math.round(-currentX / width);
+        const clampedBase = Math.max(
+          0,
+          Math.min(visibleDishes.length - 1, baseIndex),
+        );
+        activeIndexRef.current = clampedBase;
+        setActiveIndex(clampedBase);
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          g.captured = true;
+        } catch {
+          /* ignore */
+        }
+      } else {
+        // Abandon slider — browser keeps vertical page scroll.
+        gestureRef.current = null;
+        return;
+      }
+    }
+
+    if (g.mode !== 'horizontal') return;
+
+    const width = widthRef.current || measureWidth() || 1;
+    const maxIndex = Math.max(visibleDishes.length - 1, 0);
+    let nextX = g.originX + (event.clientX - g.startX);
+
+    // Soft rubber-band past ends so hold+drag never feels stuck.
+    const minX = -maxIndex * width;
+    if (nextX > 0) nextX *= 0.32;
+    else if (nextX < minX) nextX = minX + (nextX - minX) * 0.32;
+
+    x.set(nextX);
+    if (event.cancelable) event.preventDefault();
+  };
+
+  const finishRailGesture = (event) => {
+    const g = gestureRef.current;
+    if (!g || g.finishing) return;
+    if (event.pointerId != null && event.pointerId !== g.id) return;
+
+    g.finishing = true;
+    const wasHorizontal = g.mode === 'horizontal';
+    const velocity = g.velocity;
+    const originX = g.originX;
+    const pointerId = g.id;
+    const captured = g.captured;
+    gestureRef.current = null;
+
+    if (captured) {
+      try {
+        event.currentTarget.releasePointerCapture?.(pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!wasHorizontal) {
+      suppressClickRef.current = false;
+      return;
+    }
+
+    const width = widthRef.current || measureWidth() || 1;
+    const currentX = x.get();
+    const startIndex = activeIndexRef.current;
+    const traveled = currentX - originX; // negative = swiped left (next)
+    const commitPx = Math.max(COMMIT_MIN_PX, width * COMMIT_RATIO);
+
+    let target = startIndex;
+    if (velocity <= -FLICK_VELOCITY || traveled <= -commitPx) {
+      target = startIndex + 1;
+    } else if (velocity >= FLICK_VELOCITY || traveled >= commitPx) {
+      target = startIndex - 1;
+    }
+
+    const maxIndex = Math.max(visibleDishes.length - 1, 0);
+    target = Math.max(0, Math.min(maxIndex, target));
+
+    snapToIndex(target, {
+      haptic: target !== startIndex,
+      velocity: velocity * 1000,
+    });
+
+    // Clear click suppress on next tick so the trailing click is eaten.
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
+
+  const onRailClickCapture = (event) => {
+    if (!suppressClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   if (!category || dishes.length === 0) return null;
@@ -298,32 +510,40 @@ export function CategoryDishRail({
 
       <div className="relative">
         <div
-          ref={scrollContainerRef}
-          onScroll={syncScrollState}
-          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto scroll-smooth pb-2 pt-1"
+          ref={viewportRef}
+          className="guest-dish-slider touch-pan-y select-none overflow-hidden pb-2 pt-1"
+          style={{ touchAction: 'pan-y' }}
+          onPointerDown={onRailPointerDown}
+          onPointerMove={onRailPointerMove}
+          onPointerUp={finishRailGesture}
+          onPointerCancel={finishRailGesture}
+          onLostPointerCapture={finishRailGesture}
+          onClickCapture={onRailClickCapture}
         >
-          {visibleDishes.map((dish) => (
-            <div
-              key={dish.id}
-              className="box-border w-full shrink-0 snap-start px-4 sm:px-5"
-              style={{ flex: '0 0 100%' }}
-            >
-              <ExperienceDishCard
-                dish={dish}
-                isShortlisted={shortlistIds?.has(dish.id)}
-                isCompared={comparedIds.has(dish.id)}
-                quantity={quantities[dish.id] || 0}
-                onOpenDetail={onOpenDetail}
-                onToggleShortlist={onToggleShortlist}
-                onToggleCompare={onToggleCompare}
-                onAddToOrder={onAddToOrder}
-                onIncrement={onIncrement}
-                onDecrement={onDecrement}
-                currency={currency}
-                showSteam={steamForCategory && dish.availability !== false}
-              />
-            </div>
-          ))}
+          <motion.div className="flex will-change-transform" style={{ x }}>
+            {visibleDishes.map((dish) => (
+              <div
+                key={dish.id}
+                className="box-border w-full shrink-0 px-4 sm:px-5"
+                style={{ flex: '0 0 100%' }}
+              >
+                <ExperienceDishCard
+                  dish={dish}
+                  isShortlisted={shortlistIds?.has(dish.id)}
+                  isCompared={comparedIds.has(dish.id)}
+                  quantity={quantities[dish.id] || 0}
+                  onOpenDetail={onOpenDetail}
+                  onToggleShortlist={onToggleShortlist}
+                  onToggleCompare={onToggleCompare}
+                  onAddToOrder={onAddToOrder}
+                  onIncrement={onIncrement}
+                  onDecrement={onDecrement}
+                  currency={currency}
+                  showSteam={steamForCategory && dish.availability !== false}
+                />
+              </div>
+            ))}
+          </motion.div>
         </div>
 
         {showDots ? (

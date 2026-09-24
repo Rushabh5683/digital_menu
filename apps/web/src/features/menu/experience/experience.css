@@ -18,6 +18,17 @@
   scroll-padding-right: 1rem;
 }
 
+/* Transform-based category dish slider — no native overflow-x (avoids
+   vertical rubber-band fighting the page scroll). */
+.guest-dish-slider {
+  overflow: hidden;
+  touch-action: pan-y;
+  overscroll-behavior-y: auto;
+  overscroll-behavior-x: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 @media (min-width: 640px) {
   .horizontal-rail {
     scroll-padding-left: 1.5rem;
