@@ -5,6 +5,7 @@ import { api } from '../../../shared/api/client.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
+import { useSheetSwipeDismiss } from '../experience/useSheetSwipeDismiss.jsx';
 import {
   buildOrderTimeline,
   formatOrderDisplayNumber,
@@ -260,6 +261,7 @@ export function MyOrderDrawer({
   tableNumber,
 }) {
   useLockBodyScroll(open);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: open });
 
   if (!open) return null;
 
@@ -278,8 +280,14 @@ export function MyOrderDrawer({
         aria-label="Close order"
         onClick={onClose}
       />
-      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4">
+      <div
+        className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl"
+        style={swipe.panelStyle}
+      >
+        <div
+          className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4"
+          {...swipe.handleProps}
+        >
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--g-accent-deep)]">
               My Order
@@ -294,13 +302,18 @@ export function MyOrderDrawer({
           <button
             type="button"
             onClick={onClose}
+            onPointerDown={(event) => event.stopPropagation()}
             className="rounded-full border border-stone-200 bg-white p-2 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
             aria-label="Close"
           >
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
+        <div
+          ref={swipe.scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5"
+          {...swipe.scrollProps}
+        >
           {order ? (
             <OrderStatusPanel
               order={order}

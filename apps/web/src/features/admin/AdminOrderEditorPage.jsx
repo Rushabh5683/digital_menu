@@ -12,12 +12,14 @@ import {
   Save,
   Search,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
 import { goBack } from '../../shared/lib/navigation.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
+import { CancelOrderModal } from './CancelOrderModal.jsx';
 import { PaymentMethodModal } from './PaymentMethodModal.jsx';
 import { useBillPrint } from './print/useBillPrint.jsx';
 import {
@@ -45,6 +47,7 @@ export function AdminOrderEditorPage() {
   const [addingDishId, setAddingDishId] = useState(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const { printBill, printKot, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
     useBillPrint();
 
@@ -218,6 +221,21 @@ export function AdminOrderEditorPage() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: ({ cancelReason, adminPassword }) =>
+      api.updateAdminOrderStatus(orderId, 'CANCELLED', {
+        cancelReason,
+        adminPassword,
+      }),
+    onMutate: () => setError(null),
+    onError: (err) => setError(err.message || 'Could not cancel order'),
+    onSuccess: () => {
+      setCancelOpen(false);
+      invalidate();
+      navigate('/admin/orders');
+    },
+  });
+
   const leaveToFloor = async () => {
     const current = orderQuery.data;
     const empty = !(current?.items || []).length;
@@ -259,7 +277,7 @@ export function AdminOrderEditorPage() {
     return (
       <div className="flex min-h-[50vh] items-center justify-center gap-2 text-[var(--muted)]">
         <LoaderCircle className="animate-spin" size={18} />
-        Loading orderù
+        Loading order?
       </div>
     );
   }
@@ -279,7 +297,7 @@ export function AdminOrderEditorPage() {
     order.tableLabel ||
     (order.tableNumber != null
       ? `Table ${String(order.tableNumber).padStart(2, '0')}`
-      : 'Table ù');
+      : 'Table ?');
   const lineBusy =
     qtyMutation.isPending || removeMutation.isPending || addMutation.isPending;
   const billed = Boolean(order.billPrintedAt);
@@ -299,7 +317,7 @@ export function AdminOrderEditorPage() {
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               {table}
-              {billed ? ' ù Bill printed' : ''}
+              {billed ? ' ? Bill printed' : ''}
             </p>
             <h1
               className="truncate text-2xl text-[var(--ink)]"
@@ -311,7 +329,7 @@ export function AdminOrderEditorPage() {
               Order ID: {order.orderNumber || order.id}
             </p>
             <p className="text-xs text-[var(--muted)]">
-              {formatClock(order.createdAt)} ù {order.status.replaceAll('_', ' ')}
+              {formatClock(order.createdAt)} ? {order.status.replaceAll('_', ' ')}
             </p>
           </div>
         </div>
@@ -364,14 +382,28 @@ export function AdminOrderEditorPage() {
             </>
           ) : null}
           {canEdit && canSettle ? (
-            <Button
-              className="gap-1.5"
-              disabled={items.length === 0}
-              onClick={() => setPaymentOpen(true)}
-            >
-              <Check size={16} />
-              Complete
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                className="gap-1.5 text-red-700 hover:text-red-800"
+                disabled={cancelMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  setCancelOpen(true);
+                }}
+              >
+                <XCircle size={16} />
+                Cancel order
+              </Button>
+              <Button
+                className="gap-1.5"
+                disabled={items.length === 0}
+                onClick={() => setPaymentOpen(true)}
+              >
+                <Check size={16} />
+                Complete
+              </Button>
+            </>
           ) : null}
         </div>
       </header>
@@ -393,7 +425,7 @@ export function AdminOrderEditorPage() {
       ) : null}
 
       {!canEdit ? (
-        <Alert tone="info">This ticket is closed ù view only.</Alert>
+        <Alert tone="info">This ticket is closed ? view only.</Alert>
       ) : null}
 
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
@@ -405,7 +437,7 @@ export function AdminOrderEditorPage() {
             </p>
             <ul className="flex gap-1.5 overflow-x-auto overscroll-x-contain px-2.5 py-2.5 lg:max-h-[min(70vh,36rem)] lg:flex-col lg:space-y-0.5 lg:overflow-y-auto lg:px-1.5 lg:pb-3">
               {dishesQuery.isLoading ? (
-                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">Loadingù</li>
+                <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">Loading?</li>
               ) : categories.length === 0 ? (
                 <li className="px-2 py-3 text-xs text-[var(--muted)] whitespace-nowrap">No categories</li>
               ) : (
@@ -452,7 +484,7 @@ export function AdminOrderEditorPage() {
                 <input
                   value={dishSearch}
                   onChange={(e) => setDishSearch(e.target.value)}
-                  placeholder="Search dishes in this categoryù"
+                  placeholder="Search dishes in this category?"
                   className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] py-2 pl-9 pr-3 text-sm outline-none ring-[var(--teal)] focus:ring-2"
                 />
               </label>
@@ -478,7 +510,7 @@ export function AdminOrderEditorPage() {
                       <span className="min-w-0">
                         <span className="block truncate font-semibold text-[var(--ink)]">
                           {dish.name}
-                          {addingDishId === dish.id ? 'ù' : ''}
+                          {addingDishId === dish.id ? '?' : ''}
                         </span>
                       </span>
                       <span className="shrink-0 text-sm font-bold text-[var(--teal)]">
@@ -499,14 +531,14 @@ export function AdminOrderEditorPage() {
               Current order
             </p>
             <p className="mt-0.5 text-sm text-[var(--ink-soft,#5c564c)]">
-              {items.length} line{items.length === 1 ? '' : 's'} ù tap dishes on the left to add
+              {items.length} line{items.length === 1 ? '' : 's'} ? tap dishes on the left to add
             </p>
           </div>
 
           <ul className="max-h-[min(55vh,28rem)] flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {items.length === 0 ? (
               <li className="rounded-xl border border-dashed border-[var(--line)] px-3 py-10 text-center text-sm text-[var(--muted)]">
-                No items yet ù pick a category and tap dishes on the left
+                No items yet ? pick a category and tap dishes on the left
               </li>
             ) : (
               items.map((item) => (
@@ -555,7 +587,7 @@ export function AdminOrderEditorPage() {
                       </button>
                     </div>
                   ) : (
-                    <span className="shrink-0 text-sm font-semibold">ù {item.quantity}</span>
+                    <span className="shrink-0 text-sm font-semibold">? {item.quantity}</span>
                   )}
                   <span className="w-14 shrink-0 text-right text-sm font-bold text-[var(--teal)]">
                     {formatMoney(item.subtotal)}
@@ -672,14 +704,28 @@ export function AdminOrderEditorPage() {
               </>
             ) : null}
             {canEdit && canSettle ? (
-              <Button
-                className="min-w-0 flex-1 gap-1.5"
-                disabled={items.length === 0}
-                onClick={() => setPaymentOpen(true)}
-              >
-                <Check size={16} />
-                Complete
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  className="min-w-0 flex-1 gap-1.5 text-red-700 hover:text-red-800"
+                  disabled={cancelMutation.isPending}
+                  onClick={() => {
+                    setError(null);
+                    setCancelOpen(true);
+                  }}
+                >
+                  <XCircle size={16} />
+                  Cancel
+                </Button>
+                <Button
+                  className="min-w-0 flex-1 gap-1.5"
+                  disabled={items.length === 0}
+                  onClick={() => setPaymentOpen(true)}
+                >
+                  <Check size={16} />
+                  Complete
+                </Button>
+              </>
             ) : null}
           </div>
         </div>
@@ -687,12 +733,23 @@ export function AdminOrderEditorPage() {
 
       <PaymentMethodModal
         open={paymentOpen}
-        orderLabel={`${table} ù #${displayNo}`}
+        orderLabel={`${table} #${displayNo}`}
         totalLabel={formatMoney(order.total)}
         orderTotal={Number(order.total || 0)}
         busy={completeMutation.isPending}
         onCancel={() => setPaymentOpen(false)}
         onConfirm={(payment) => completeMutation.mutate(payment)}
+      />
+      <CancelOrderModal
+        open={cancelOpen}
+        orderLabel={`${table} #${displayNo}`}
+        busy={cancelMutation.isPending}
+        error={cancelOpen ? error : null}
+        onCancel={() => {
+          setCancelOpen(false);
+          setError(null);
+        }}
+        onConfirm={(payload) => cancelMutation.mutate(payload)}
       />
       {printerModal}
     </div>

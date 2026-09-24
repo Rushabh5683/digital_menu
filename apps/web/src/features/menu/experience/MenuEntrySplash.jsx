@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronUp, Pause, Sparkles } from 'lucide-react';
 import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 const SPLASH_MS = 4200;
-const EXIT_MS = 520;
+const EXIT_MS = 580;
 const ACCENT = '#E85D24';
 const INK = '#1C1917';
 const MUTED = '#78716C';
 const BG = '#FAF8F5';
+const SWIPE_THRESHOLD = 78;
+const SWIPE_ARM = 10;
 
 function shortLocation(address) {
   if (!address || typeof address !== 'string') return null;
@@ -16,9 +19,96 @@ function shortLocation(address) {
   return cleaned.length > 38 ? `${cleaned.slice(0, 36).trim()}…` : cleaned;
 }
 
+function SwipeUpHint({ accent, reducedMotion, active }) {
+  return (
+    <div
+      className="pointer-events-none flex flex-col items-center gap-2 pb-1.5"
+      aria-hidden
+    >
+      <motion.div
+        className="flex h-11 w-11 items-center justify-center rounded-full border border-[#e8dfd0]/90 bg-[#f5efe6]/95 shadow-[0_6px_18px_-10px_rgba(28,25,23,0.35)] backdrop-blur-sm"
+        animate={
+          reducedMotion || active
+            ? { y: active ? -6 : 0, scale: active ? 1.06 : 1 }
+            : { y: [0, -8, 0], scale: [1, 1.04, 1] }
+        }
+        transition={
+          reducedMotion || active
+            ? { type: 'spring', stiffness: 420, damping: 28 }
+            : { duration: 1.35, repeat: Infinity, ease: [0.22, 1, 0.36, 1] }
+        }
+      >
+        <motion.span
+          style={{ color: accent }}
+          animate={
+            reducedMotion || active
+              ? { opacity: 1 }
+              : { opacity: [0.55, 1, 0.55] }
+          }
+          transition={
+            reducedMotion || active
+              ? { duration: 0.2 }
+              : { duration: 1.35, repeat: Infinity, ease: 'easeInOut' }
+          }
+        >
+          <ChevronUp className="h-6 w-6" strokeWidth={2.6} />
+        </motion.span>
+      </motion.div>
+
+      <div className="relative flex h-5 w-7 items-center justify-center overflow-hidden">
+        {[0, 1].map((i) => (
+          <motion.span
+            key={i}
+            className="absolute left-1/2 -translate-x-1/2"
+            style={{ color: accent }}
+            animate={
+              reducedMotion || active
+                ? { opacity: 0, y: -8 }
+                : {
+                    opacity: [0, 0.7, 0],
+                    y: [6, -4, -12],
+                  }
+            }
+            transition={
+              reducedMotion || active
+                ? { duration: 0.2 }
+                : {
+                    duration: 1.35,
+                    repeat: Infinity,
+                    ease: [0.22, 1, 0.36, 1],
+                    delay: 0.12 + i * 0.16,
+                  }
+            }
+          >
+            <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.4} />
+          </motion.span>
+        ))}
+      </div>
+
+      <motion.p
+        className="text-[10px] font-semibold uppercase tracking-[0.16em]"
+        style={{ color: MUTED }}
+        animate={
+          reducedMotion || active
+            ? { opacity: active ? 0.95 : 0.75 }
+            : { opacity: [0.45, 0.9, 0.45] }
+        }
+        transition={
+          reducedMotion || active
+            ? { duration: 0.2 }
+            : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+        }
+      >
+        {active ? 'Release to enter' : 'Swipe up to skip'}
+      </motion.p>
+    </div>
+  );
+}
+
 /**
  * Welcome splash shown immediately on QR open.
  * Hold anywhere (except Skip / Explore) to pause the countdown; release to continue.
+ * On mobile, swipe up above Explore Menu to enter with a premium slide-away.
  * Auto-enter waits until `canFinish` (menu data ready) and the timer completes.
  */
 export function MenuEntrySplash({
@@ -28,20 +118,32 @@ export function MenuEntrySplash({
   canFinish = true,
   onEnter,
 }) {
+  const reduceMotion = useReducedMotion();
   const [holding, setHolding] = useState(false);
   const [remainingMs, setRemainingMs] = useState(durationMs);
   const [timerDone, setTimerDone] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const enteredRef = useRef(false);
   const remainingRef = useRef(durationMs);
   const lastTickRef = useRef(null);
   const timerDoneRef = useRef(false);
+  const pointerIdRef = useRef(null);
+  const startYRef = useRef(null);
+  const dragYRef = useRef(0);
+  const swipingRef = useRef(false);
 
-  const finishEnter = () => {
+  const finishEnter = (fromSwipe = false) => {
     if (enteredRef.current) return;
     enteredRef.current = true;
+    setHolding(false);
+    setDragging(false);
     setExiting(true);
+    if (fromSwipe) {
+      setDragY(-Math.max(window.innerHeight * 0.55, 280));
+    }
     window.setTimeout(() => {
       setEntered(true);
       onEnter?.();
@@ -50,13 +152,13 @@ export function MenuEntrySplash({
 
   useEffect(() => {
     if (timerDone && canFinish && !exiting) {
-      finishEnter();
+      finishEnter(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerDone, canFinish, exiting]);
 
   useEffect(() => {
-    if (holding || exiting || timerDoneRef.current) {
+    if (holding || exiting || timerDoneRef.current || dragging) {
       lastTickRef.current = null;
       return undefined;
     }
@@ -80,7 +182,7 @@ export function MenuEntrySplash({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [holding, exiting]);
+  }, [holding, exiting, dragging]);
 
   if (entered) return null;
 
@@ -97,8 +199,67 @@ export function MenuEntrySplash({
   const logoSrc = resolveMediaUrl(restaurant?.logo || restaurant?.logoUrl || '') || null;
 
   const setHold = (value) => {
-    if (exiting || timerDoneRef.current) return;
+    if (exiting || timerDoneRef.current || swipingRef.current) return;
     setHolding(value);
+  };
+
+  const resetDrag = () => {
+    pointerIdRef.current = null;
+    startYRef.current = null;
+    swipingRef.current = false;
+    dragYRef.current = 0;
+    setDragY(0);
+    setDragging(false);
+  };
+
+  const onSwipePointerDown = (event) => {
+    if (exiting || enteredRef.current) return;
+    if (event.button != null && event.button !== 0) return;
+    pointerIdRef.current = event.pointerId;
+    startYRef.current = event.clientY;
+    swipingRef.current = false;
+    dragYRef.current = 0;
+    setDragY(0);
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onSwipePointerMove = (event) => {
+    if (exiting || enteredRef.current) return;
+    if (pointerIdRef.current == null || event.pointerId !== pointerIdRef.current) return;
+    if (startYRef.current == null) return;
+
+    const delta = startYRef.current - event.clientY;
+    if (!swipingRef.current && delta > SWIPE_ARM) {
+      swipingRef.current = true;
+      setHolding(false);
+      setDragging(true);
+    }
+    if (!swipingRef.current) return;
+
+    const next = -Math.min(Math.max(delta, 0) * 0.92, window.innerHeight * 0.42);
+    dragYRef.current = next;
+    setDragY(next);
+  };
+
+  const onSwipePointerEnd = (event) => {
+    if (pointerIdRef.current == null || event.pointerId !== pointerIdRef.current) return;
+    const traveled = -dragYRef.current;
+    const shouldEnter = swipingRef.current && traveled >= SWIPE_THRESHOLD;
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (shouldEnter) {
+      finishEnter(true);
+      return;
+    }
+    resetDrag();
+    setHold(false);
   };
 
   const holdHandlers = {
@@ -111,15 +272,27 @@ export function MenuEntrySplash({
     onPointerLeave: () => setHold(false),
   };
 
+  const exitOpacity = exiting
+    ? 0
+    : dragging
+      ? Math.max(0.35, 1 + dragY / 260)
+      : 1;
+  const sheetTransform = exiting
+    ? `translate3d(0, ${dragY < -40 ? dragY : -Math.max(window.innerHeight * 0.18, 120)}px, 0) scale(0.985)`
+    : `translate3d(0, ${dragY}px, 0)`;
+
   return (
     <div
       className="guest-menu guest-menu--experience fixed inset-0 z-[80] select-none touch-manipulation"
       style={{
-        opacity: exiting ? 0 : 1,
-        transform: exiting ? 'translateY(-12%)' : 'translateY(0)',
-        transition: `opacity ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+        opacity: exitOpacity,
+        transform: sheetTransform,
+        transition: dragging
+          ? 'none'
+          : `opacity ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${EXIT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
         pointerEvents: exiting ? 'none' : 'auto',
         background: BG,
+        willChange: 'transform, opacity',
       }}
       {...holdHandlers}
     >
@@ -153,7 +326,7 @@ export function MenuEntrySplash({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              finishEnter();
+              finishEnter(false);
             }}
             onPointerDown={(event) => event.stopPropagation()}
             className="shrink-0 rounded-full border border-stone-200/90 bg-[#F3F1ED] px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-600 transition active:scale-[0.98]"
@@ -167,7 +340,7 @@ export function MenuEntrySplash({
             className="relative h-[8.5rem] w-[8.5rem] shrink-0 overflow-hidden rounded-full bg-white"
             style={{
               boxShadow: `0 0 0 1px rgba(232,93,36,0.18), 0 18px 40px -22px rgba(28,25,23,0.28)`,
-              animation: exiting ? undefined : 'menu-splash-in 0.65s ease both',
+              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease both',
             }}
           >
             {logoSrc ? (
@@ -191,7 +364,7 @@ export function MenuEntrySplash({
             className="mt-8 max-w-[18rem] font-serif text-[1.85rem] font-medium leading-[1.18] tracking-tight sm:text-[2.05rem]"
             style={{
               color: INK,
-              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.06s both',
+              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.06s both',
             }}
           >
             Welcome to {name}
@@ -201,7 +374,7 @@ export function MenuEntrySplash({
             className="mt-3 max-w-[16rem] text-[14px] leading-relaxed"
             style={{
               color: MUTED,
-              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.1s both',
+              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.1s both',
             }}
           >
             {tagline}
@@ -210,7 +383,7 @@ export function MenuEntrySplash({
           <div
             className="mt-8 flex w-full max-w-[20rem] items-center gap-3"
             style={{
-              animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.14s both',
+              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.14s both',
             }}
           >
             <div className="h-px flex-1 bg-stone-300/80" />
@@ -225,18 +398,35 @@ export function MenuEntrySplash({
         </div>
 
         <div
-          className="relative z-10 mx-auto w-full max-w-md space-y-3.5 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2"
+          className="relative z-10 mx-auto w-full max-w-md space-y-3 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2"
           style={{
-            animation: exiting ? undefined : 'menu-splash-in 0.65s ease 0.18s both',
+            animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.18s both',
+          }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            onSwipePointerDown(event);
+          }}
+          onPointerMove={onSwipePointerMove}
+          onPointerUp={(event) => {
+            onSwipePointerEnd(event);
+          }}
+          onPointerCancel={(event) => {
+            onSwipePointerEnd(event);
           }}
         >
+          <SwipeUpHint
+            accent={ACCENT}
+            reducedMotion={reduceMotion}
+            active={dragging}
+          />
+
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              finishEnter();
+              if (swipingRef.current || Math.abs(dragYRef.current) > 12) return;
+              finishEnter(false);
             }}
-            onPointerDown={(event) => event.stopPropagation()}
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99]"
             style={{
               background: ACCENT,
@@ -262,7 +452,9 @@ export function MenuEntrySplash({
               className="flex items-center justify-center gap-1.5 text-[12px]"
               style={{ color: MUTED }}
             >
-              {holding ? (
+              {dragging ? (
+                <span>Release to enter menu</span>
+              ) : holding ? (
                 <>
                   <Pause className="h-3 w-3" style={{ color: ACCENT }} fill={ACCENT} />
                   <span>Paused · Release to continue</span>

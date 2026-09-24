@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { validateAnonymousSessionId, validateCuid, validateSlug } from '../../utils/validate.js';
@@ -232,6 +233,9 @@ export function serializeOrder(order) {
       captainName: share.captain?.name ?? null,
     })),
     paidAt: order.paidAt ?? null,
+    cancelReason: order.cancelReason ?? null,
+    cancelledAt: order.cancelledAt ?? null,
+    cancelledByUserId: order.cancelledByUserId ?? null,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     // Back-compat for earlier admin UI fields
@@ -885,6 +889,9 @@ export async function updateOrderStatus(
     staffAppreciationAmount = null,
     appreciationCaptainIds = null,
     businessDate = null,
+    cancelReason = null,
+    adminPassword = null,
+    actorUserId = null,
   } = {},
 ) {
   const id = validateCuid(orderId, 'orderId');
@@ -918,6 +925,48 @@ export async function updateOrderStatus(
   const data = { status: nextStatus };
   let appreciationRows = [];
   let backdateStamp = null;
+
+  if (nextStatus === OrderStatuses.CANCELLED) {
+    const reason =
+      typeof cancelReason === 'string' && cancelReason.trim()
+        ? cancelReason.trim().slice(0, 500)
+        : '';
+    if (!reason) {
+      throw new AppError('Cancel reason is required', 400);
+    }
+
+    const password = typeof adminPassword === 'string' ? adminPassword : '';
+    if (!password) {
+      throw new AppError('Admin password is required to cancel an order', 400);
+    }
+    if (!actorUserId) {
+      throw new AppError('Only the restaurant admin can cancel orders', 403);
+    }
+
+    const adminUser = await prisma.user.findFirst({
+      where: {
+        id: actorUserId,
+        restaurantId: existing.restaurantId,
+        role: 'RESTAURANT_ADMIN',
+        isActive: true,
+      },
+      select: { id: true, passwordHash: true },
+    });
+    if (!adminUser) {
+      throw new AppError('Only the restaurant admin can cancel orders', 403);
+    }
+
+    const passwordOk = await bcrypt.compare(password, adminUser.passwordHash);
+    if (!passwordOk) {
+      throw new AppError('Incorrect password', 401, { code: 'INVALID_PASSWORD' });
+    }
+
+    await assertOrderDayEditable(existing.restaurantId, existing);
+
+    data.cancelReason = reason;
+    data.cancelledAt = new Date();
+    data.cancelledByUserId = adminUser.id;
+  }
 
   if (nextStatus === OrderStatuses.COMPLETED) {
     const itemCount = await prisma.orderItem.count({ where: { orderId: id } });

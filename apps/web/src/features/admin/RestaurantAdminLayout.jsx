@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChartColumn,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   ClipboardList,
   FileBarChart,
   Grid2x2,
@@ -27,6 +29,8 @@ import { StatusBadge } from '../../shared/ui/StatusBadge.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
 import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
+
+const SIDEBAR_COLLAPSED_KEY = 'dm_admin_sidebar_collapsed';
 
 const adminNav = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -79,7 +83,39 @@ const childLinkClass = ({ isActive }) =>
       : 'text-white/55 hover:bg-white/[0.06] hover:text-white',
   ].join(' ');
 
-function NavItem({ item, onNavigate }) {
+function readCollapsedPref() {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsedPref(value) {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}
+
+function useIsDesktopSidebar() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isDesktop;
+}
+
+function NavItem({ item, collapsed, onNavigate, onExpandSidebar }) {
   const location = useLocation();
   const Icon = item.icon;
   const childActive = useMemo(() => {
@@ -100,8 +136,35 @@ function NavItem({ item, onNavigate }) {
   const groupActive = childActive || ordersGroupActive;
   const [open, setOpen] = useState(() => Boolean(groupActive));
 
+  useEffect(() => {
+    if (groupActive) setOpen(true);
+  }, [groupActive]);
+
   if (item.children) {
     const expanded = open || groupActive;
+
+    if (collapsed) {
+      return (
+        <button
+          type="button"
+          title={`${item.label} — expand sidebar`}
+          aria-label={`Expand sidebar for ${item.label}`}
+          onClick={() => {
+            onExpandSidebar?.();
+            setOpen(true);
+          }}
+          className={[
+            'flex w-full items-center justify-center rounded-xl px-2 py-2.5 text-sm font-semibold transition',
+            groupActive
+              ? 'bg-white/10 text-white'
+              : 'text-white/65 hover:bg-white/[0.06] hover:text-white',
+          ].join(' ')}
+        >
+          <Icon size={18} className="opacity-80" />
+        </button>
+      );
+    }
+
     return (
       <div className="space-y-1">
         <button
@@ -114,7 +177,7 @@ function NavItem({ item, onNavigate }) {
               : 'text-white/65 hover:bg-white/[0.06] hover:text-white',
           ].join(' ')}
         >
-          <Icon size={16} className="opacity-80" />
+          <Icon size={16} className="shrink-0 opacity-80" />
           <span className="flex-1 text-left">{item.label}</span>
           <ChevronDown
             size={14}
@@ -144,9 +207,31 @@ function NavItem({ item, onNavigate }) {
     );
   }
 
+  if (collapsed) {
+    return (
+      <NavLink
+        to={item.to}
+        end={item.end}
+        title={item.label}
+        aria-label={item.label}
+        className={({ isActive }) =>
+          [
+            'flex items-center justify-center rounded-xl px-2 py-2.5 text-sm font-semibold transition',
+            isActive
+              ? 'bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]'
+              : 'text-white/65 hover:bg-white/[0.06] hover:text-white',
+          ].join(' ')
+        }
+        onClick={onNavigate}
+      >
+        <Icon size={18} className="opacity-80" />
+      </NavLink>
+    );
+  }
+
   return (
     <NavLink to={item.to} end={item.end} className={linkClass} onClick={onNavigate}>
-      <Icon size={16} className="opacity-80" />
+      <Icon size={16} className="shrink-0 opacity-80" />
       {item.label}
     </NavLink>
   );
@@ -156,6 +241,10 @@ export function RestaurantAdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsedPref, setCollapsedPref] = useState(readCollapsedPref);
+  const isDesktop = useIsDesktopSidebar();
+  // Icon rail only on desktop — mobile drawer always shows full labels.
+  const collapsed = collapsedPref && isDesktop;
   const isCaptain = user?.role === UserRoles.RESTAURANT_CAPTAIN;
   const nav = isCaptain ? captainNav : adminNav;
 
@@ -170,14 +259,31 @@ export function RestaurantAdminLayout() {
   const restaurant = restaurantQuery.data || user?.restaurant;
   const slug = restaurant?.slug;
 
+  // Desktop collapse only — mobile drawer always uses the full sidebar width.
+  const sidebarWidth = collapsedPref && isDesktop ? '4.75rem' : '270px';
+
   async function handleLogout() {
     await logout();
     navigate('/login', { replace: true });
   }
 
+  function toggleCollapsed() {
+    setCollapsedPref((prev) => {
+      const next = !prev;
+      writeCollapsedPref(next);
+      return next;
+    });
+  }
+
+  function expandSidebar() {
+    setCollapsedPref(false);
+    writeCollapsedPref(false);
+  }
+
   return (
     <div
       className="flex h-dvh flex-col overflow-hidden bg-[var(--surface)] lg:grid lg:grid-cols-[var(--admin-sidebar-width)_1fr]"
+      style={{ ['--admin-sidebar-width']: sidebarWidth }}
     >
       {mobileOpen ? (
         <button
@@ -190,7 +296,7 @@ export function RestaurantAdminLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-[260] flex h-dvh w-[var(--admin-sidebar-width)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-transform lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-[260] flex h-dvh w-[min(270px,85vw)] max-w-[85vw] flex-col overflow-hidden bg-[var(--ink)] text-white transition-[transform,width] duration-200 ease-out lg:static lg:z-auto lg:h-full lg:w-[var(--admin-sidebar-width)] lg:max-w-none lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
         style={{
@@ -198,13 +304,28 @@ export function RestaurantAdminLayout() {
             'radial-gradient(circle at 18% 0%, rgba(201,162,39,0.2), transparent 42%), radial-gradient(circle at 100% 100%, rgba(31,74,69,0.4), transparent 48%)',
         }}
       >
-        <div className="shrink-0 border-b border-white/10 px-5 py-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">
+        <div className={['shrink-0 border-b border-white/10 py-4', collapsed ? 'px-2' : 'px-5'].join(' ')}>
+          <div
+            className={[
+              'flex items-start gap-3',
+              collapsed ? 'flex-col items-center' : 'justify-between',
+            ].join(' ')}
+          >
+            <div className={['min-w-0', collapsed ? 'flex w-full justify-center' : ''].join(' ')}>
+              <p
+                className={[
+                  'text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--accent)]',
+                  collapsed ? 'hidden' : '',
+                ].join(' ')}
+              >
                 {isCaptain ? 'Captain console' : 'Restaurant console'}
               </p>
-              <div className="mt-3 flex items-center gap-3">
+              <div
+                className={[
+                  'mt-3 flex items-center gap-3',
+                  collapsed ? 'mt-0 justify-center' : '',
+                ].join(' ')}
+              >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white p-1">
                   {restaurant?.logoUrl ? (
                     <img
@@ -216,7 +337,7 @@ export function RestaurantAdminLayout() {
                     <UtensilsCrossed size={18} className="text-white/70" />
                   )}
                 </div>
-                <div className="min-w-0">
+                <div className={['min-w-0', collapsed ? 'hidden' : ''].join(' ')}>
                   <h1
                     className="truncate text-lg tracking-tight"
                     style={{ fontFamily: 'var(--font-display)' }}
@@ -229,40 +350,70 @@ export function RestaurantAdminLayout() {
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              className="rounded-lg p-2 text-white/70 hover:bg-white/10 lg:hidden"
-              onClick={() => setMobileOpen(false)}
-            >
-              <X size={16} />
-            </button>
+            <div className={['flex shrink-0 items-center gap-1', collapsed ? 'mt-2' : ''].join(' ')}>
+              <button
+                type="button"
+                className="hidden rounded-lg p-2 text-white/70 hover:bg-white/10 lg:inline-flex"
+                onClick={toggleCollapsed}
+                aria-label={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {collapsedPref ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg p-2 text-white/70 hover:bg-white/10 lg:hidden"
+                onClick={() => setMobileOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <nav
+          className={[
+            'min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-visible py-4',
+            collapsed ? 'px-2' : 'px-3',
+          ].join(' ')}
+        >
           {nav.map((item) => (
             <NavItem
               key={item.id || item.to}
               item={item}
+              collapsed={collapsed}
+              onExpandSidebar={expandSidebar}
               onNavigate={() => setMobileOpen(false)}
             />
           ))}
         </nav>
 
-        <div className="shrink-0 border-t border-white/10 p-4">
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-            <p className="text-sm font-semibold text-white">{user?.name}</p>
-            <p className="truncate text-xs text-white/50">{user?.email}</p>
-            {isCaptain ? (
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
-                Captain
-              </p>
-            ) : null}
-            <Button variant="accent" size="sm" className="mt-3 w-full" onClick={handleLogout}>
-              <LogOut size={13} />
-              Logout
-            </Button>
-          </div>
+        <div className={['shrink-0 border-t border-white/10', collapsed ? 'p-2' : 'p-4'].join(' ')}>
+          {collapsed ? (
+            <button
+              type="button"
+              title="Logout"
+              aria-label="Logout"
+              onClick={handleLogout}
+              className="flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2.5 text-white/80 hover:bg-white/10 hover:text-white"
+            >
+              <LogOut size={16} />
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+              <p className="text-sm font-semibold text-white">{user?.name}</p>
+              <p className="truncate text-xs text-white/50">{user?.email}</p>
+              {isCaptain ? (
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">
+                  Captain
+                </p>
+              ) : null}
+              <Button variant="accent" size="sm" className="mt-3 w-full" onClick={handleLogout}>
+                <LogOut size={13} />
+                Logout
+              </Button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -278,6 +429,15 @@ export function RestaurantAdminLayout() {
                 aria-label="Open navigation"
               >
                 <Menu size={16} />
+              </button>
+              <button
+                type="button"
+                className="hidden rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:inline-flex"
+                onClick={toggleCollapsed}
+                aria-label={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {collapsedPref ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
               </button>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">

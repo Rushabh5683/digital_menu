@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Plus,
@@ -16,6 +16,7 @@ import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker, splitDietaryAndServesTags } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { DishSteam, categoryShowsSteam } from './DishSteam.jsx';
+import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
 
 function sameCategory(a, b) {
   const left = a?.categoryId || a?.category || null;
@@ -33,6 +34,9 @@ function formatServesLabel(tag) {
   return `${count} ${count === '1' ? 'person' : 'people'}`;
 }
 
+const PAGE_THRESHOLD = 72;
+const PAGE_ARM = 14;
+
 export function DishDetailModal({
   dish,
   allDishes = [],
@@ -48,16 +52,135 @@ export function DishDetailModal({
 }) {
   const [selectedIngredient, setSelectedIngredient] = useState(null);
   const [compactHeader, setCompactHeader] = useState(false);
-  const scrollRef = useRef(null);
+  const [pageX, setPageX] = useState(0);
+  const [slideDir, setSlideDir] = useState(0);
   const heroRef = useRef(null);
+  const pageSessionRef = useRef(null);
+  const pageXRef = useRef(0);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: Boolean(dish) });
+  const scrollRef = swipe.scrollRef;
+
+  const categoryDishes = useMemo(() => {
+    if (!dish) return [];
+    return (allDishes || []).filter((d) => sameCategory(dish, d));
+  }, [allDishes, dish]);
+
+  const dishIndex = useMemo(
+    () => categoryDishes.findIndex((d) => d.id === dish?.id),
+    [categoryDishes, dish?.id],
+  );
+
+  const canPage = categoryDishes.length > 1 && dishIndex >= 0;
+
+  const goToSibling = useCallback(
+    (delta) => {
+      if (!canPage) return;
+      const nextIndex =
+        (dishIndex + delta + categoryDishes.length) % categoryDishes.length;
+      const nextDish = categoryDishes[nextIndex];
+      if (!nextDish || nextDish.id === dish?.id) return;
+      setSlideDir(delta > 0 ? 1 : -1);
+      onSelectDish?.(nextDish);
+    },
+    [canPage, categoryDishes, dish?.id, dishIndex, onSelectDish],
+  );
 
   useLockBodyScroll(Boolean(dish));
 
   useEffect(() => {
     setSelectedIngredient(null);
     setCompactHeader(false);
+    setPageX(0);
+    pageXRef.current = 0;
+    pageSessionRef.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [dish?.id]);
+  }, [dish?.id, scrollRef]);
+
+  const onPagePointerDown = useCallback((event) => {
+    if (event.button != null && event.button !== 0) return;
+    if (event.isPrimary === false) return;
+    pageSessionRef.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      mode: null,
+    };
+    pageXRef.current = 0;
+  }, []);
+
+  const onPagePointerMove = useCallback(
+    (event) => {
+      const session = pageSessionRef.current;
+      if (!session || event.pointerId !== session.id) return;
+      if (swipe.dragging) {
+        pageSessionRef.current = null;
+        setPageX(0);
+        pageXRef.current = 0;
+        return;
+      }
+
+      const dx = event.clientX - session.x;
+      const dy = event.clientY - session.y;
+
+      if (!session.mode) {
+        if (Math.abs(dx) < PAGE_ARM && Math.abs(dy) < PAGE_ARM) return;
+        if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+          session.mode = 'page';
+        } else {
+          session.mode = 'other';
+          return;
+        }
+      }
+
+      if (session.mode !== 'page' || !canPage) return;
+
+      const next = Math.max(-140, Math.min(140, dx * 0.9));
+      pageXRef.current = next;
+      setPageX(next);
+      if (event.cancelable) event.preventDefault();
+    },
+    [canPage, swipe.dragging],
+  );
+
+  const onPagePointerEnd = useCallback(
+    (event) => {
+      const session = pageSessionRef.current;
+      if (!session || (event.pointerId != null && event.pointerId !== session.id)) {
+        return;
+      }
+      const wasPaging = session.mode === 'page';
+      const dx = pageXRef.current;
+      pageSessionRef.current = null;
+      pageXRef.current = 0;
+      setPageX(0);
+
+      if (!wasPaging || !canPage) return;
+      if (dx <= -PAGE_THRESHOLD) goToSibling(1);
+      else if (dx >= PAGE_THRESHOLD) goToSibling(-1);
+    },
+    [canPage, goToSibling],
+  );
+
+  const contentPointerProps = {
+    onPointerDown: (event) => {
+      swipe.scrollProps.onPointerDown?.(event);
+      onPagePointerDown(event);
+    },
+    onPointerMove: (event) => {
+      onPagePointerMove(event);
+      if (pageSessionRef.current?.mode === 'page') return;
+      swipe.scrollProps.onPointerMove?.(event);
+    },
+    onPointerUp: (event) => {
+      const paging = pageSessionRef.current?.mode === 'page';
+      onPagePointerEnd(event);
+      if (!paging) swipe.scrollProps.onPointerUp?.(event);
+    },
+    onPointerCancel: (event) => {
+      onPagePointerEnd(event);
+      swipe.scrollProps.onPointerCancel?.(event);
+    },
+  };
 
   if (!dish) return null;
 
@@ -104,25 +227,39 @@ export function DishDetailModal({
     setCompactHeader(scroller.scrollTop > threshold);
   }
 
+  const panelStyle = {
+    maxHeight: 'min(92dvh, calc(100dvh - 0.5rem))',
+    ...(swipe.panelStyle || {}),
+    ...(pageX
+      ? {
+          transform: `translate3d(${pageX}px, ${swipe.offsetY || 0}px, 0)`,
+          transition: 'none',
+          willChange: 'transform',
+        }
+      : {}),
+  };
+
   return (
     <AnimatePresence>
-      <div className="guest-portal fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
-        <button
-          type="button"
-          className="absolute inset-0 cursor-default bg-stone-900/40"
-          aria-label="Close dish detail"
-          onClick={onClose}
-        />
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 40 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-10 flex w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
-          style={{
-            maxHeight: 'min(92dvh, calc(100dvh - 0.5rem))',
-          }}
-        >
+      <div
+        className="guest-portal fixed inset-x-0 top-0 z-[70] flex justify-center"
+        style={{ bottom: 0 }}
+      >
+        <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default bg-stone-900/40"
+            aria-label="Close dish detail"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
+            style={panelStyle}
+          >
           <button
             id="dish-detail-close-btn"
             type="button"
@@ -163,7 +300,14 @@ export function DishDetailModal({
             ref={scrollRef}
             onScroll={handleContentScroll}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar"
+            {...contentPointerProps}
           >
+            <motion.div
+              key={dish.id}
+              initial={{ opacity: 0.55, x: slideDir === 0 ? 0 : slideDir * 28 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            >
             <div
               ref={heroRef}
               className="relative aspect-[16/11] w-full overflow-hidden bg-stone-100 sm:aspect-[16/9]"
@@ -477,6 +621,7 @@ export function DishDetailModal({
                 </div>
               )}
             </div>
+            </motion.div>
           </div>
 
           <div className="shrink-0 space-y-2 border-t border-stone-200/80 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] backdrop-blur-md sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
@@ -530,7 +675,8 @@ export function DishDetailModal({
               </button>
             ) : null}
           </div>
-        </motion.div>
+          </motion.div>
+        </div>
       </div>
     </AnimatePresence>
   );

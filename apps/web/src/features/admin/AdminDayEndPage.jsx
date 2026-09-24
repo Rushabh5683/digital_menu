@@ -240,17 +240,6 @@ export function AdminDayEndPage() {
     refetchOnMount: 'always',
   });
 
-  const cancelledQuery = useQuery({
-    queryKey: ['admin', 'day-end', 'cancelled', day],
-    queryFn: async () => {
-      const payload = await api.listAdminOrders({
-        status: 'CANCELLED,REJECTED',
-        date: day,
-        limit: 100,
-      });
-      return payload.orders || [];
-    },
-  });
 
   const closeMutation = useMutation({
     mutationFn: () => api.closeAdminDayEnd({ businessDate: day }),
@@ -318,8 +307,11 @@ export function AdminDayEndPage() {
   const payments = report?.payments || [];
   const items = report?.items || [];
   const bills = report?.bills || report?.recentOrders || [];
+  const cancelled = report?.cancelledBills || [];
+  const billRows = [...bills, ...cancelled].sort(
+    (a, b) => new Date(b.paidAt || b.createdAt || 0) - new Date(a.paidAt || a.createdAt || 0),
+  );
   const openTickets = openTicketsQuery.data || [];
-  const cancelled = cancelledQuery.data || [];
   const dayEnd = statusQuery.data;
   const isClosed = Boolean(dayEnd?.isClosed);
   const closeInfo = dayEnd?.close;
@@ -350,7 +342,6 @@ export function AdminDayEndPage() {
     statusQuery.refetch();
     reportQuery.refetch();
     openTicketsQuery.refetch();
-    cancelledQuery.refetch();
   }
 
   function requestClose() {
@@ -679,11 +670,11 @@ export function AdminDayEndPage() {
             <div className="mb-4 flex items-center gap-2">
               <Receipt size={16} className="text-[var(--teal)]" />
               <h3 className="text-lg font-semibold text-[var(--ink)]">
-                Bills ({bills.length})
+                Bills ({billRows.length})
               </h3>
             </div>
-            {bills.length === 0 ? (
-              <p className="py-8 text-center text-sm text-[var(--muted)]">No settled bills.</p>
+            {billRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-[var(--muted)]">No bills for this day.</p>
             ) : (
               <ScrollTable minWidthClass="min-w-[40rem]">
                 <table className="w-full text-left text-sm">
@@ -699,85 +690,111 @@ export function AdminDayEndPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bills.map((bill) => (
-                      <tr key={bill.id} className="border-b border-[var(--line)]/70 last:border-0">
-                        <td className="py-2.5 pr-3">
-                          <Link
-                            to={`/admin/orders/${bill.id}`}
-                            className="font-semibold text-[var(--teal)] hover:underline"
-                          >
-                            #{formatOrderNo(bill.orderNumber)}
-                          </Link>
-                          <span className="mt-0.5 block text-[11px] text-[var(--muted)]">
-                            {bill.itemCount} item{bill.itemCount === 1 ? '' : 's'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <Link
-                            to={`/admin/orders/${bill.id}`}
-                            className="font-mono text-xs font-semibold text-[var(--ink)] hover:text-[var(--teal)] hover:underline"
-                            title={bill.orderNumber || bill.id}
-                          >
-                            {bill.orderNumber || bill.id || '—'}
-                          </Link>
-                        </td>
-                        <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
-                          {bill.tableLabel || '—'}
-                        </td>
-                        <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
-                          {formatTime(bill.paidAt || bill.createdAt)}
-                        </td>
-                        <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
-                          {bill.paymentLabel || '—'}
-                        </td>
-                        <td className="py-2.5 font-semibold text-[var(--ink)]">
-                          {formatMoney(bill.total)}
-                        </td>
-                        {canEdit ? (
-                          <td className="py-2.5 pl-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setEditBill(bill)}
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-[var(--teal)] hover:bg-[var(--teal)]/10"
+                    {billRows.map((bill) => {
+                      const cancelledBill =
+                        bill.status === 'CANCELLED' || bill.status === 'REJECTED';
+                      return (
+                        <tr
+                          key={bill.id}
+                          className={[
+                            'border-b border-[var(--line)]/70 last:border-0',
+                            cancelledBill ? 'bg-red-50/70' : '',
+                          ].join(' ')}
+                        >
+                          <td className="py-2.5 pr-3">
+                            <Link
+                              to={`/admin/orders/${bill.id}`}
+                              className={[
+                                'font-semibold hover:underline',
+                                cancelledBill ? 'text-red-700' : 'text-[var(--teal)]',
+                              ].join(' ')}
                             >
-                              <Pencil size={12} />
-                              Edit pay
-                            </button>
+                              #{formatOrderNo(bill.orderNumber)}
+                            </Link>
+                            <span
+                              className={[
+                                'mt-0.5 block text-[11px]',
+                                cancelledBill
+                                  ? 'font-bold uppercase tracking-[0.08em] text-red-600'
+                                  : 'text-[var(--muted)]',
+                              ].join(' ')}
+                            >
+                              {cancelledBill
+                                ? bill.status === 'REJECTED'
+                                  ? 'Rejected'
+                                  : 'Cancelled'
+                                : `${bill.itemCount} item${bill.itemCount === 1 ? '' : 's'}`}
+                            </span>
                           </td>
-                        ) : null}
-                      </tr>
-                    ))}
+                          <td className="py-2.5 pr-3">
+                            <Link
+                              to={`/admin/orders/${bill.id}`}
+                              className={[
+                                'font-mono text-xs font-semibold hover:underline',
+                                cancelledBill
+                                  ? 'text-red-700 hover:text-red-800'
+                                  : 'text-[var(--ink)] hover:text-[var(--teal)]',
+                              ].join(' ')}
+                              title={bill.orderNumber || bill.id}
+                            >
+                              {bill.orderNumber || bill.id || '—'}
+                            </Link>
+                          </td>
+                          <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
+                            {bill.tableLabel || '—'}
+                          </td>
+                          <td className="py-2.5 pr-3 text-[var(--ink-soft)]">
+                            {formatTime(bill.paidAt || bill.cancelledAt || bill.createdAt)}
+                          </td>
+                          <td
+                            className={[
+                              'py-2.5 pr-3',
+                              cancelledBill
+                                ? 'font-semibold text-red-600'
+                                : 'text-[var(--ink-soft)]',
+                            ].join(' ')}
+                          >
+                            {cancelledBill
+                              ? bill.status === 'REJECTED'
+                                ? 'Rejected'
+                                : 'Cancelled'
+                              : bill.paymentLabel || '—'}
+                          </td>
+                          <td
+                            className={[
+                              'py-2.5 font-semibold',
+                              cancelledBill
+                                ? 'text-red-700 line-through decoration-red-400'
+                                : 'text-[var(--ink)]',
+                            ].join(' ')}
+                          >
+                            {formatMoney(bill.total)}
+                          </td>
+                          {canEdit ? (
+                            <td className="py-2.5 pl-2 text-right">
+                              {cancelledBill ? (
+                                <span className="text-xs text-[var(--muted)]">—</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditBill(bill)}
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-[var(--teal)] hover:bg-[var(--teal)]/10"
+                                >
+                                  <Pencil size={12} />
+                                  Edit pay
+                                </button>
+                              )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </ScrollTable>
             )}
           </section>
 
-          {cancelled.length > 0 ? (
-            <section className="rounded-2xl border border-red-200/70 bg-red-50/40 p-5">
-              <h3 className="text-lg font-semibold text-[var(--ink)]">
-                Cancelled / rejected ({cancelled.length})
-              </h3>
-              <ul className="mt-3 space-y-2">
-                {cancelled.map((order) => (
-                  <li
-                    key={order.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200/60 bg-white/80 px-3 py-2 text-sm"
-                  >
-                    <span className="font-semibold text-[var(--ink)]">
-                      #{formatOrderNo(order.orderNumber)} · {order.status}
-                    </span>
-                    <span className="text-[var(--muted)]">
-                      {order.table?.tableNumber != null
-                        ? `Table ${String(order.table.tableNumber).padStart(2, '0')}`
-                        : '—'}{' '}
-                      · {formatMoney(order.total)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
         </>
       ) : null}
 

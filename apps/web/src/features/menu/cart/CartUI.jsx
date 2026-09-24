@@ -1,5 +1,5 @@
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../../shared/api/client.js';
 import { computeExclusiveGst } from '../../../shared/lib/gst.js';
@@ -8,6 +8,7 @@ import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { Button } from '../../../shared/ui/Button.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
+import { useSheetSwipeDismiss } from '../experience/useSheetSwipeDismiss.jsx';
 import { formatOrderDisplayNumber, isTerminalOrderStatus } from './orderStatus.js';
 import { OrderStatusPanel } from './OrderStatusPanel.jsx';
 
@@ -80,6 +81,18 @@ export function CartDrawer({
 
   useLockBodyScroll(open);
 
+  const handleClose = useCallback(() => {
+    setError(null);
+    if (step === 'success') {
+      setStep('cart');
+      setPlacedOrder(null);
+      setWasAdd(false);
+    }
+    onClose();
+  }, [step, onClose]);
+
+  const swipe = useSheetSwipeDismiss(handleClose, { enabled: open });
+
   if (!open) return null;
 
   async function submitCart() {
@@ -135,16 +148,6 @@ export function CartDrawer({
     }
   }
 
-  function handleClose() {
-    setError(null);
-    if (step === 'success') {
-      setStep('cart');
-      setPlacedOrder(null);
-      setWasAdd(false);
-    }
-    onClose();
-  }
-
   return createPortal(
     <div
       className="guest-portal fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6"
@@ -159,8 +162,14 @@ export function CartDrawer({
         onClick={handleClose}
       />
 
-      <div className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4">
+      <div
+        className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl"
+        style={swipe.panelStyle}
+      >
+        <div
+          className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4"
+          {...swipe.handleProps}
+        >
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--g-accent-deep)]">
               {step === 'success'
@@ -187,6 +196,7 @@ export function CartDrawer({
           <button
             type="button"
             onClick={handleClose}
+            onPointerDown={(event) => event.stopPropagation()}
             className="rounded-full border border-[var(--g-line)] bg-white p-2 text-[var(--g-ink-soft)] hover:bg-[var(--g-bg-deep)] hover:text-[var(--g-ink)]"
             aria-label="Close"
           >
@@ -194,7 +204,11 @@ export function CartDrawer({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        <div
+          ref={swipe.scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4"
+          {...swipe.scrollProps}
+        >
           {error ? <Alert tone="error">{error}</Alert> : null}
 
           {step === 'success' && placedOrder ? (
