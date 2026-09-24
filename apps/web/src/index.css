@@ -21,6 +21,7 @@
   --header-offset: 0px;
   --nav-offset: 3.5rem;
   --admin-sidebar-width: 270px;
+  --admin-sidebar-width-collapsed: 4.75rem;
   --super-sidebar-width: 260px;
 }
 

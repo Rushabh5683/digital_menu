@@ -41,6 +41,9 @@ function serializeOrder(order, { includeItems = false } = {}) {
     paymentSplits: Array.isArray(order.paymentSplits) ? order.paymentSplits : null,
     staffAppreciationAmount: Number(order.staffAppreciationAmount ?? 0),
     paidAt: order.paidAt ?? null,
+    cancelReason: order.cancelReason ?? null,
+    cancelledAt: order.cancelledAt ?? null,
+    cancelledByUserId: order.cancelledByUserId ?? null,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     placedAt: order.createdAt,
@@ -722,6 +725,9 @@ export async function updateAdminOrderStatus(restaurantId, orderId, status, extr
     staffAppreciationAmount: extras.staffAppreciationAmount,
     appreciationCaptainIds: extras.appreciationCaptainIds,
     businessDate: extras.businessDate,
+    cancelReason: extras.cancelReason,
+    adminPassword: extras.adminPassword,
+    actorUserId: extras.actorUserId,
   });
 }
 

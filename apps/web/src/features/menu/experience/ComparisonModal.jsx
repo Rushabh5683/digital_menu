@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
+import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
 
 function categoryKeyOf(dish) {
   if (!dish) return '';
@@ -130,6 +131,7 @@ export function ComparisonModal({
 
   const open = Boolean(pair && dishA && dishB);
   useLockBodyScroll(open);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: open });
 
   if (!open) return null;
 
@@ -154,8 +156,12 @@ export function ComparisonModal({
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
+            style={swipe.panelStyle}
           >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-3.5 py-3">
+            <div
+              className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-3.5 py-3"
+              {...swipe.handleProps}
+            >
               <div className="flex min-w-0 items-center gap-2">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#9A7B4F]/15 text-[#9A7B4F]">
                   <Scale className="h-3.5 w-3.5" />
@@ -172,6 +178,7 @@ export function ComparisonModal({
               <button
                 type="button"
                 onClick={onClose}
+                onPointerDown={(event) => event.stopPropagation()}
                 className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 hover:bg-stone-200/80 hover:text-stone-900"
                 aria-label="Close"
               >
@@ -179,7 +186,11 @@ export function ComparisonModal({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3.5 py-3.5 no-scrollbar">
+            <div
+              ref={swipe.scrollRef}
+              className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3.5 py-3.5 no-scrollbar"
+              {...swipe.scrollProps}
+            >
               {/* Side-by-side from ~360px up; stacked on very narrow phones */}
               <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
                 {[dishA, dishB].map((dish, slot) => (

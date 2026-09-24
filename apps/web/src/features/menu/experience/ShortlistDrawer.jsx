@@ -3,6 +3,7 @@ import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag, Check 
 import { motion } from 'framer-motion';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { formatPrice, dishImage, parsePrice } from './lib/formatters.js';
+import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
 
 /**
  * Table picks sheet — mobile-first bottom sheet aligned to the phone shell (max-w-lg).
@@ -44,6 +45,7 @@ export function ShortlistDrawer({
   }, [shortlist, isOpen]);
 
   useLockBodyScroll(isOpen);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: isOpen });
 
   if (!isOpen) return null;
 
@@ -103,8 +105,12 @@ export function ShortlistDrawer({
         exit={{ opacity: 0, y: 36 }}
         transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
         className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
+        style={swipe.panelStyle}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-[#FDFBF7] p-5">
+        <div
+          className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-[#FDFBF7] p-5"
+          {...swipe.handleProps}
+        >
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9A7B4F]/15 text-[#9A7B4F]">
               <UtensilsCrossed className="h-4 w-4" />
@@ -122,6 +128,7 @@ export function ShortlistDrawer({
           <button
             type="button"
             onClick={onClose}
+            onPointerDown={(event) => event.stopPropagation()}
             className="rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
             aria-label="Close"
           >

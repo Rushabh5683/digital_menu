@@ -131,7 +131,8 @@ export function AdminReportsPage() {
             Sales reports
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Settled bills only (completed orders). Filter by date
+            Settled sales for the selected dates. Cancelled bills are listed separately under Bills
+            and are not counted in revenue.
           </p>
         </div>
         {report?.range ? (
@@ -299,6 +300,7 @@ export function AdminReportsPage() {
           {tab === 'bills' ? (
             <BillsPanel
               orders={report.bills || report.recentOrders || []}
+              cancelledOrders={report.cancelledBills || []}
               onSelect={(order) => setSelectedBillId(order.id)}
             />
           ) : null}
@@ -355,6 +357,10 @@ function SummaryPanel({ report }) {
       value: formatMoney(s.staffAppreciationTotal || 0),
     },
     { label: 'Bills settled', value: String(s.orderCount) },
+    {
+      label: 'Cancelled / rejected',
+      value: String(s.cancelledCount || 0),
+    },
     { label: 'Units sold', value: String(s.unitsSold) },
     { label: 'Average ticket', value: formatMoney(s.averageTicket) },
   ];
@@ -539,8 +545,15 @@ function DaysPanel({ days }) {
   );
 }
 
-function BillsPanel({ orders, onSelect }) {
-  if (!orders.length) return <EmptyBlock text="No settled bills in this range." />;
+function BillsPanel({ orders, cancelledOrders = [], onSelect }) {
+  const rows = [...orders, ...cancelledOrders].sort(
+    (a, b) => new Date(b.createdAt || b.paidAt || 0) - new Date(a.createdAt || a.paidAt || 0),
+  );
+
+  if (!rows.length) {
+    return <EmptyBlock text="No bills in this range." />;
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_12px_28px_-24px_rgba(15,31,28,0.35)]">
       <ScrollTable minWidthClass="min-w-[32rem]">
@@ -555,43 +568,76 @@ function BillsPanel({ orders, onSelect }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--line)]">
-            {orders.map((order) => (
-              <tr
-                key={order.id}
-                className="cursor-pointer hover:bg-[var(--teal)]/8"
-                onClick={() => onSelect?.(order)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelect?.(order);
-                  }
-                }}
-                tabIndex={0}
-                role="button"
-                aria-label={`View bill ${formatOrderNo(order.orderNumber)}`}
-              >
-                <td className="px-4 py-2.5 font-semibold text-[var(--ink)] whitespace-nowrap">
-                  #{formatOrderNo(order.orderNumber)}
-                </td>
-                <td className="px-4 py-2.5 text-[var(--ink)] whitespace-nowrap">
-                  {order.tableLabel || '—'}
-                </td>
-                <td className="px-4 py-2.5 text-[var(--ink)] whitespace-nowrap">
-                  {order.itemCount}
-                </td>
-                <td className="px-4 py-2.5 text-[var(--ink)] whitespace-nowrap">
-                  {order.paymentLabel || '—'}
-                </td>
-                <td className="px-4 py-2.5 font-semibold text-[var(--teal)] whitespace-nowrap">
-                  {formatMoney(order.total)}
-                </td>
-              </tr>
-            ))}
+            {rows.map((order) => {
+              const cancelled =
+                order.status === 'CANCELLED' || order.status === 'REJECTED';
+              return (
+                <tr
+                  key={order.id}
+                  className={[
+                    'cursor-pointer',
+                    cancelled ? 'bg-red-50/70 hover:bg-red-50' : 'hover:bg-[var(--teal)]/8',
+                  ].join(' ')}
+                  onClick={() => onSelect?.(order)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelect?.(order);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View bill ${formatOrderNo(order.orderNumber)}${cancelled ? ' (cancelled)' : ''}`}
+                >
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    <span
+                      className={[
+                        'font-semibold',
+                        cancelled ? 'text-red-700' : 'text-[var(--ink)]',
+                      ].join(' ')}
+                    >
+                      #{formatOrderNo(order.orderNumber)}
+                    </span>
+                    {cancelled ? (
+                      <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-[0.1em] text-red-600">
+                        {order.status === 'REJECTED' ? 'Rejected' : 'Cancelled'}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-2.5 text-[var(--ink)] whitespace-nowrap">
+                    {order.tableLabel || '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-[var(--ink)] whitespace-nowrap">
+                    {order.itemCount}
+                  </td>
+                  <td
+                    className={[
+                      'px-4 py-2.5 whitespace-nowrap',
+                      cancelled ? 'font-semibold text-red-600' : 'text-[var(--ink)]',
+                    ].join(' ')}
+                  >
+                    {cancelled
+                      ? order.status === 'REJECTED'
+                        ? 'Rejected'
+                        : 'Cancelled'
+                      : order.paymentLabel || '—'}
+                  </td>
+                  <td
+                    className={[
+                      'px-4 py-2.5 font-semibold whitespace-nowrap',
+                      cancelled ? 'text-red-700 line-through decoration-red-400' : 'text-[var(--teal)]',
+                    ].join(' ')}
+                  >
+                    {formatMoney(order.total)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </ScrollTable>
       <p className="border-t border-[var(--line)] px-4 py-2 text-[11px] text-[var(--muted)]">
-        Click a bill to view items
+        Click a bill to view items. Cancelled bills are marked in red and not counted in sales.
       </p>
     </div>
   );
@@ -647,9 +693,11 @@ function ReportBillDrawer({ orderId, onClose }) {
             </h2>
             {order ? (
               <p className="mt-1 text-sm text-[var(--muted)]">
-                {order.paymentMethod
-                  ? `Paid · ${String(order.paymentMethod).replaceAll('_', ' ')}`
-                  : order.status}
+                {order.status === 'CANCELLED' || order.status === 'REJECTED'
+                  ? order.status
+                  : order.paymentMethod
+                    ? `Paid · ${String(order.paymentMethod).replaceAll('_', ' ')}`
+                    : order.status}
                 {order.createdAt
                   ? ` · ${new Intl.DateTimeFormat('en-IN', {
                       day: '2-digit',
@@ -734,12 +782,21 @@ function ReportBillDrawer({ orderId, onClose }) {
                   </div>
                 ) : null}
                 <div className="flex justify-between border-t border-[var(--line)] pt-2">
-                  <span className="font-semibold text-[var(--ink)]">Grand total</span>
+                  <span className="font-semibold text-[var(--ink)]">
+                    {Number(order.taxAmount) > 0 ? 'Total (incl. GST)' : 'Grand total'}
+                  </span>
                   <span className="text-lg font-bold text-[var(--teal)]">
                     {formatMoney(order.total)}
                   </span>
                 </div>
               </div>
+
+              {order.cancelReason ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50/60 px-4 py-3 text-sm text-red-600">
+                  <span className="font-semibold">Reason: </span>
+                  {order.cancelReason}
+                </p>
+              ) : null}
             </>
           ) : null}
         </div>

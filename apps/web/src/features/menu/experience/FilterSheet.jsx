@@ -3,6 +3,7 @@ import { X, RotateCcw, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { DIETARY_TAG_GROUPS } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
+import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
 
 const SPICE_TAGS = ['Mild', 'Spicy', 'Hot'];
 
@@ -47,6 +48,7 @@ export function FilterSheet({
 }) {
   const menuOptions = useMemo(() => buildMenuFilterOptions(dishes), [dishes]);
   useLockBodyScroll(isOpen);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: isOpen });
 
   if (!isOpen) return null;
 
@@ -77,20 +79,28 @@ export function FilterSheet({
     menuOptions.extraTags.length > 0;
 
   return (
-    <div className="guest-portal fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default bg-stone-900/40"
-        aria-label="Close filters"
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98, y: 30 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98, y: 30 }}
-        className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl sm:rounded-2xl"
-      >
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3.5 sm:px-5">
+    <div
+      className="guest-portal fixed inset-x-0 top-0 z-[70] flex justify-center"
+      style={{ bottom: 0 }}
+    >
+      <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
+        <button
+          type="button"
+          className="absolute inset-0 cursor-default bg-stone-900/40"
+          aria-label="Close filters"
+          onClick={onClose}
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98, y: 30 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.98, y: 30 }}
+          className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
+          style={swipe.panelStyle}
+        >
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3.5 sm:px-5"
+          {...swipe.handleProps}
+        >
           <div className="min-w-0">
             <h3 className="font-serif text-lg font-medium leading-tight text-stone-900">
               Refine menu
@@ -105,6 +115,7 @@ export function FilterSheet({
           <button
             type="button"
             onClick={onClose}
+            onPointerDown={(event) => event.stopPropagation()}
             className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
             aria-label="Close"
           >
@@ -112,7 +123,11 @@ export function FilterSheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar sm:px-5">
+        <div
+          ref={swipe.scrollRef}
+          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar sm:px-5"
+          {...swipe.scrollProps}
+        >
           {!hasAnyOptions ? (
             <p className="text-sm text-stone-500">
               No dietary tags on this menu yet. Add tags in admin to enable filters.
@@ -222,7 +237,8 @@ export function FilterSheet({
             Apply ({totalActive})
           </button>
         </div>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }

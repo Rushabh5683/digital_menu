@@ -286,6 +286,9 @@ adminRouter.patch(
         staffAppreciationAmount: req.body?.staffAppreciationAmount,
         appreciationCaptainIds: req.body?.appreciationCaptainIds,
         businessDate: req.body?.businessDate,
+        cancelReason: req.body?.cancelReason,
+        adminPassword: req.body?.adminPassword,
+        actorUserId: req.auth.userId,
       },
     );
     res.json(result);

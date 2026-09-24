@@ -10,6 +10,7 @@ import { X, ArrowRight, RotateCcw, ChevronRight, HelpCircle } from 'lucide-react
 import { motion } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
+import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
 
 export function HelpMeChooseModal({
   isOpen,
@@ -46,6 +47,7 @@ export function HelpMeChooseModal({
   }, [isOpen, analysis.counts.total, resetFlow]);
 
   useLockBodyScroll(isOpen);
+  const swipe = useSheetSwipeDismiss(onClose, { enabled: isOpen });
 
   if (!isOpen) return null;
 
@@ -104,8 +106,12 @@ export function HelpMeChooseModal({
           exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
+          style={swipe.panelStyle}
         >
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
+          <div
+            className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3"
+            {...swipe.handleProps}
+          >
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#9A7B4F]/15 text-[#9A7B4F]">
                 <HelpCircle className="h-4 w-4" />
@@ -123,6 +129,7 @@ export function HelpMeChooseModal({
             <button
               type="button"
               onClick={onClose}
+              onPointerDown={(event) => event.stopPropagation()}
               className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
               aria-label="Close"
             >
@@ -130,7 +137,11 @@ export function HelpMeChooseModal({
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar">
+          <div
+            ref={swipe.scrollRef}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar"
+            {...swipe.scrollProps}
+          >
             {!isResults && analysis.counts.total === 0 ? (
               <div className="space-y-3 py-6 text-center">
                 <p className="font-serif text-lg text-stone-900">No dishes available tonight</p>

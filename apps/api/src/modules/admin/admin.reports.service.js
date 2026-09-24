@@ -95,26 +95,50 @@ const PAYMENT_LABELS = {
 export async function getAdminSalesReport(restaurantId, query = {}) {
   const range = resolveReportRange(query);
 
-  const orders = await prisma.order.findMany({
-    where: {
-      restaurantId,
-      status: 'COMPLETED',
-      createdAt: { gte: range.from, lt: range.to },
-    },
-    include: {
-      table: { select: { tableNumber: true } },
-      items: {
-        select: {
-          dishId: true,
-          dishNameSnapshot: true,
-          quantity: true,
-          subtotal: true,
-          priceSnapshot: true,
+  const [orders, cancelledOrders] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        restaurantId,
+        status: 'COMPLETED',
+        createdAt: { gte: range.from, lt: range.to },
+      },
+      include: {
+        table: { select: { tableNumber: true } },
+        items: {
+          select: {
+            dishId: true,
+            dishNameSnapshot: true,
+            quantity: true,
+            subtotal: true,
+            priceSnapshot: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: 'asc' },
-  });
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.order.findMany({
+      where: {
+        restaurantId,
+        status: { in: ['CANCELLED', 'REJECTED'] },
+        createdAt: { gte: range.from, lt: range.to },
+      },
+      include: {
+        table: { select: { tableNumber: true } },
+        items: {
+          select: {
+            id: true,
+            dishId: true,
+            dishNameSnapshot: true,
+            quantity: true,
+            subtotal: true,
+            priceSnapshot: true,
+          },
+          orderBy: { dishNameSnapshot: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
 
   let grossSales = 0;
   let foodSubtotal = 0;
@@ -234,6 +258,35 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
       itemCount: (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
     }));
 
+  const cancelledBills = cancelledOrders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    total: money(order.total),
+    subtotal: money(order.subtotal),
+    taxAmount: money(order.taxAmount),
+    cgstAmount: money(order.cgstAmount),
+    sgstAmount: money(order.sgstAmount),
+    roundOffAmount: money(order.roundOffAmount),
+    cancelReason: order.cancelReason ?? null,
+    cancelledAt: order.cancelledAt ?? null,
+    createdAt: order.createdAt,
+    tableNumber: order.table?.tableNumber ?? null,
+    tableLabel:
+      order.table?.tableNumber != null
+        ? `Table ${String(order.table.tableNumber).padStart(2, '0')}`
+        : null,
+    itemCount: (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+    items: (order.items || []).map((item) => ({
+      id: item.id,
+      dishId: item.dishId,
+      dishNameSnapshot: item.dishNameSnapshot,
+      quantity: item.quantity,
+      subtotal: money(item.subtotal),
+      priceSnapshot: money(item.priceSnapshot),
+    })),
+  }));
+
   const appreciationShares = await prisma.orderAppreciationShare.findMany({
     where: {
       createdAt: { gte: range.from, lt: range.to },
@@ -317,12 +370,14 @@ export async function getAdminSalesReport(restaurantId, query = {}) {
       averageTicket,
       staffAppreciationTotal: money(staffAppreciationTotal),
       staffAppreciationCount: appreciationShares.length,
+      cancelledCount: cancelledBills.length,
     },
     payments,
     items,
     days,
     recentOrders: bills.slice(0, 40),
     bills,
+    cancelledBills,
     staffAppreciation: {
       total: money(staffAppreciationTotal),
       count: appreciationShares.length,
