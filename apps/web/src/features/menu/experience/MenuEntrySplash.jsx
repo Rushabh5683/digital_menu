@@ -9,14 +9,25 @@ import { ChevronUp, Pause, Sparkles } from 'lucide-react';
 import { resolveMediaUrl } from '../../../shared/lib/mediaUrl.js';
 
 const SPLASH_MS = 4200;
-const EXIT_MS = 680;
+const EXIT_MS = 520;
 const ACCENT = '#E85D24';
 const INK = '#1C1917';
 const MUTED = '#78716C';
 const BG = '#FAF8F5';
-const SWIPE_THRESHOLD = 64;
-const SWIPE_ARM = 10;
-const EXIT_EASE = [0.16, 1, 0.3, 1];
+
+/** Gesture thresholds (px / px-per-ms). */
+const SWIPE_ARM = 12;
+const SWIPE_COMMIT = 72;
+const SWIPE_FLICK = 0.55;
+const EXIT_EASE = [0.22, 1, 0.36, 1];
+
+/** Phase machine — single source of truth for gesture/animation. */
+const PHASE = {
+  IDLE: 'idle',
+  DRAGGING: 'dragging',
+  EXITING: 'exiting',
+  DONE: 'done',
+};
 
 function shortLocation(address) {
   if (!address || typeof address !== 'string') return null;
@@ -113,8 +124,14 @@ function SwipeUpHint({ accent, reducedMotion, active }) {
 
 /**
  * Welcome splash shown immediately on QR open.
- * Hold anywhere (except Skip / Explore) to pause the countdown; release to continue.
- * Swipe up to skip — motion values + imperative animate for reliable exit.
+ *
+ * Animation ownership (single controller):
+ *   Framer motion values (y / opacity / scale) + imperative animate()
+ *   — never CSS transform transitions on the same node.
+ *
+ * Phase machine:
+ *   idle → dragging → exiting → done
+ * Once EXITING, gestures are ignored and transforms are never reset.
  */
 export function MenuEntrySplash({
   restaurant,
@@ -124,131 +141,152 @@ export function MenuEntrySplash({
   onEnter,
 }) {
   const reduceMotion = useReducedMotion();
+  const rootRef = useRef(null);
+  const swipeZoneRef = useRef(null);
+
   const [holding, setHolding] = useState(false);
   const [remainingMs, setRemainingMs] = useState(durationMs);
   const [timerDone, setTimerDone] = useState(false);
-  const [exiting, setExiting] = useState(false);
+  const [draggingUi, setDraggingUi] = useState(false);
+  const [exitingUi, setExitingUi] = useState(false);
   const [entered, setEntered] = useState(false);
-  const [dragging, setDragging] = useState(false);
 
+  // ONE owner of splash transform/opacity
   const y = useMotionValue(0);
   const opacity = useMotionValue(1);
   const scale = useMotionValue(1);
 
-  const enteredRef = useRef(false);
-  const exitingRef = useRef(false);
+  const phaseRef = useRef(PHASE.IDLE);
   const remainingRef = useRef(durationMs);
   const lastTickRef = useRef(null);
   const timerDoneRef = useRef(false);
-  const pointerIdRef = useRef(null);
-  const startYRef = useRef(null);
-  const lastYRef = useRef(0);
-  const lastTRef = useRef(0);
-  const velocityRef = useRef(0);
-  const swipingRef = useRef(false);
-  const dragOffsetRef = useRef(0);
-  const animControlsRef = useRef([]);
-  const enterTimerRef = useRef(null);
-  const completedRef = useRef(false);
+  const canFinishRef = useRef(canFinish);
+  const reduceMotionRef = useRef(reduceMotion);
+  const onEnterRef = useRef(onEnter);
+  const animRef = useRef(null);
+  const gestureRef = useRef(null);
 
-  const stopAnims = () => {
-    animControlsRef.current.forEach((control) => {
+  canFinishRef.current = canFinish;
+  reduceMotionRef.current = reduceMotion;
+  onEnterRef.current = onEnter;
+
+  const stopAnim = () => {
+    if (animRef.current) {
       try {
-        control.stop();
+        animRef.current.stop();
       } catch {
         /* ignore */
       }
-    });
-    animControlsRef.current = [];
+      animRef.current = null;
+    }
   };
 
-  const clearEnterTimer = () => {
-    if (enterTimerRef.current) {
-      window.clearTimeout(enterTimerRef.current);
-      enterTimerRef.current = null;
+  const lockInteraction = () => {
+    const root = rootRef.current;
+    if (root) {
+      root.style.pointerEvents = 'none';
+      root.style.touchAction = 'none';
+    }
+    const zone = swipeZoneRef.current;
+    if (zone) {
+      zone.style.pointerEvents = 'none';
+      zone.style.touchAction = 'none';
     }
   };
 
   const completeEnter = () => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    clearEnterTimer();
+    if (phaseRef.current === PHASE.DONE) return;
+    phaseRef.current = PHASE.DONE;
+    stopAnim();
+    lockInteraction();
     setEntered(true);
-    onEnter?.();
+    onEnterRef.current?.();
   };
 
-  const finishEnter = (fromSwipe = false) => {
-    if (enteredRef.current || exitingRef.current) return;
-    enteredRef.current = true;
-    exitingRef.current = true;
+  const beginExit = (fromSwipe) => {
+    if (phaseRef.current === PHASE.EXITING || phaseRef.current === PHASE.DONE) {
+      return;
+    }
+    phaseRef.current = PHASE.EXITING;
+    gestureRef.current = null;
 
+    // Synchronous DOM lock — do not wait for React re-render (Android race).
+    lockInteraction();
+    setDraggingUi(false);
+    setHolding(false);
+    setExitingUi(true);
     timerDoneRef.current = true;
     remainingRef.current = 0;
     setRemainingMs(0);
     setTimerDone(true);
-    setHolding(false);
-    setDragging(false);
-    swipingRef.current = false;
-    pointerIdRef.current = null;
-    startYRef.current = null;
-    setExiting(true);
 
-    stopAnims();
+    stopAnim();
 
-    const viewportH =
-      typeof window !== 'undefined' ? window.innerHeight : 800;
-    const currentY = y.get();
-    const targetY = fromSwipe
-      ? Math.min(currentY, 0) - viewportH
-      : -Math.round(Math.min(viewportH * 0.18, 140));
-
-    if (reduceMotion) {
+    if (reduceMotionRef.current) {
       opacity.set(0);
-      clearEnterTimer();
-      enterTimerRef.current = window.setTimeout(() => {
-        completeEnter();
-      }, 120);
+      y.set(0);
+      scale.set(1);
+      completeEnter();
       return;
     }
 
+    const viewportH =
+      typeof window !== 'undefined'
+        ? Math.max(window.innerHeight || 0, window.visualViewport?.height || 0, 640)
+        : 800;
+
+    const currentY = y.get();
+    // Always continue upward from the live drag position — never jump back to 0.
+    const targetY = fromSwipe
+      ? Math.min(currentY, -1) - viewportH
+      : -Math.round(Math.min(viewportH * 0.22, 160));
+
     const duration = EXIT_MS / 1000;
-    const controls = [
-      animate(y, targetY, { duration, ease: EXIT_EASE }),
-      animate(opacity, 0, { duration: duration * 0.9, ease: [0.4, 0, 1, 1] }),
-      animate(scale, fromSwipe ? 0.96 : 0.985, {
-        duration,
-        ease: EXIT_EASE,
-      }),
-    ];
-    animControlsRef.current = controls;
 
-    clearEnterTimer();
-    Promise.all(controls.map((c) => c.finished))
-      .catch(() => {})
-      .finally(() => {
+    // Drive exit with a single primary animation; opacity/scale are secondary.
+    // onComplete is the completion source of truth (not transitionend / Promise races).
+    const primary = animate(y, targetY, {
+      duration,
+      ease: EXIT_EASE,
+      onComplete: () => {
+        animRef.current = null;
         completeEnter();
-      });
+      },
+    });
+    animRef.current = primary;
 
-    // Safety net if a control never settles
-    enterTimerRef.current = window.setTimeout(() => {
-      completeEnter();
-    }, EXIT_MS + 80);
+    animate(opacity, 0, {
+      duration: duration * 0.85,
+      ease: [0.4, 0, 1, 1],
+    });
+    animate(scale, fromSwipe ? 0.97 : 0.99, {
+      duration,
+      ease: EXIT_EASE,
+    });
   };
 
+  // Auto-enter when countdown finishes (and menu data is ready).
   useEffect(() => {
-    if (timerDone && canFinish && !exitingRef.current && !enteredRef.current) {
-      finishEnter(false);
+    canFinishRef.current = canFinish;
+    if (
+      timerDone &&
+      canFinish &&
+      phaseRef.current !== PHASE.EXITING &&
+      phaseRef.current !== PHASE.DONE
+    ) {
+      beginExit(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerDone, canFinish]);
 
+  // Countdown — UI updates throttled; never runs while dragging/exiting.
   useEffect(() => {
     if (
       holding ||
-      exitingRef.current ||
-      timerDoneRef.current ||
-      dragging ||
-      enteredRef.current
+      draggingUi ||
+      phaseRef.current === PHASE.EXITING ||
+      phaseRef.current === PHASE.DONE ||
+      timerDoneRef.current
     ) {
       lastTickRef.current = null;
       return undefined;
@@ -256,16 +294,27 @@ export function MenuEntrySplash({
 
     lastTickRef.current = performance.now();
     let frameId = 0;
+    let lastUiWrite = 0;
 
     const tick = (now) => {
-      if (enteredRef.current || timerDoneRef.current || exitingRef.current) {
+      if (
+        phaseRef.current === PHASE.EXITING ||
+        phaseRef.current === PHASE.DONE ||
+        timerDoneRef.current
+      ) {
         return;
       }
       const last = lastTickRef.current ?? now;
       lastTickRef.current = now;
       const next = Math.max(0, remainingRef.current - (now - last));
       remainingRef.current = next;
-      setRemainingMs(next);
+
+      // Throttle React writes (~8fps) so swipe gesture stays smooth on mobile.
+      if (now - lastUiWrite > 120 || next <= 0) {
+        lastUiWrite = now;
+        setRemainingMs(next);
+      }
+
       if (next <= 0) {
         timerDoneRef.current = true;
         setTimerDone(true);
@@ -276,15 +325,36 @@ export function MenuEntrySplash({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [holding, dragging, exiting]);
+  }, [holding, draggingUi, exitingUi]);
 
   useEffect(
     () => () => {
-      stopAnims();
-      clearEnterTimer();
+      // If we unmount mid-exit, still hand off to the menu (never leave parent stuck).
+      if (phaseRef.current === PHASE.EXITING) {
+        phaseRef.current = PHASE.DONE;
+        try {
+          onEnterRef.current?.();
+        } catch {
+          /* ignore */
+        }
+      }
+      stopAnim();
     },
     [],
   );
+
+  // Non-passive touchmove so vertical skip can preventDefault on Android Chrome.
+  useEffect(() => {
+    const el = swipeZoneRef.current;
+    if (!el) return undefined;
+    const onTouchMove = (event) => {
+      if (phaseRef.current === PHASE.DRAGGING && event.cancelable) {
+        event.preventDefault();
+      }
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, []);
 
   if (entered) return null;
 
@@ -298,131 +368,178 @@ export function MenuEntrySplash({
   const accentLine = restaurant?.brandTagline?.trim()
     ? `${tablePart} · ${restaurant.brandTagline.trim().toUpperCase()}`
     : tablePart;
-  const logoSrc = resolveMediaUrl(restaurant?.logo || restaurant?.logoUrl || '') || null;
+  const logoSrc =
+    resolveMediaUrl(restaurant?.logo || restaurant?.logoUrl || '') || null;
 
   const setHold = (value) => {
-    if (exitingRef.current || enteredRef.current || swipingRef.current) return;
+    if (phaseRef.current !== PHASE.IDLE) return;
     setHolding(value);
   };
 
   const snapBack = () => {
-    stopAnims();
-    const controls = [
-      animate(y, 0, { type: 'spring', stiffness: 440, damping: 38, mass: 0.75 }),
-      animate(opacity, 1, { duration: 0.2 }),
-      animate(scale, 1, { type: 'spring', stiffness: 440, damping: 38 }),
-    ];
-    animControlsRef.current = controls;
-    dragOffsetRef.current = 0;
-  };
-
-  const resetPointer = () => {
-    pointerIdRef.current = null;
-    startYRef.current = null;
-    swipingRef.current = false;
-    velocityRef.current = 0;
+    if (phaseRef.current !== PHASE.IDLE && phaseRef.current !== PHASE.DRAGGING) {
+      return;
+    }
+    phaseRef.current = PHASE.IDLE;
+    setDraggingUi(false);
+    stopAnim();
+    animRef.current = animate(y, 0, {
+      type: 'spring',
+      stiffness: 460,
+      damping: 40,
+      mass: 0.7,
+      onComplete: () => {
+        animRef.current = null;
+      },
+    });
+    animate(opacity, 1, { duration: 0.18 });
+    animate(scale, 1, { type: 'spring', stiffness: 460, damping: 40 });
   };
 
   const onSwipePointerDown = (event) => {
-    if (exitingRef.current || enteredRef.current) return;
+    if (phaseRef.current === PHASE.EXITING || phaseRef.current === PHASE.DONE) {
+      return;
+    }
     if (event.button != null && event.button !== 0) return;
     if (event.isPrimary === false) return;
 
-    // Cancel any in-flight snap-back so the next gesture starts clean
-    stopAnims();
-    y.set(0);
-    opacity.set(1);
-    scale.set(1);
-    dragOffsetRef.current = 0;
+    // Interrupt in-flight snap-back only (never touch EXITING transforms).
+    if (phaseRef.current === PHASE.IDLE || phaseRef.current === PHASE.DRAGGING) {
+      stopAnim();
+      // Continue from live position if a snap-back was mid-flight.
+      // Fresh idle starts from settled zero.
+      if (Math.abs(y.get()) < 1) {
+        y.set(0);
+        opacity.set(1);
+        scale.set(1);
+      }
+    }
 
-    pointerIdRef.current = event.pointerId;
-    startYRef.current = event.clientY;
-    lastYRef.current = event.clientY;
-    lastTRef.current = performance.now();
-    velocityRef.current = 0;
-    swipingRef.current = false;
+    phaseRef.current = PHASE.IDLE;
+    gestureRef.current = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+      lastT: event.timeStamp || performance.now(),
+      velocity: 0,
+      axis: null, // null | 'vertical' | 'horizontal'
+      captured: false,
+    };
 
     try {
       event.currentTarget.setPointerCapture?.(event.pointerId);
+      gestureRef.current.captured = true;
     } catch {
       /* ignore */
     }
   };
 
   const onSwipePointerMove = (event) => {
-    if (exitingRef.current || enteredRef.current) return;
-    if (pointerIdRef.current == null || event.pointerId !== pointerIdRef.current) {
+    if (phaseRef.current === PHASE.EXITING || phaseRef.current === PHASE.DONE) {
       return;
     }
-    if (startYRef.current == null) return;
+    const g = gestureRef.current;
+    if (!g || event.pointerId !== g.id) return;
 
-    const now = performance.now();
-    const dt = Math.max(1, now - lastTRef.current);
-    // Negative velocity = finger moving up
-    velocityRef.current = (event.clientY - lastYRef.current) / dt;
-    lastYRef.current = event.clientY;
-    lastTRef.current = now;
+    const now = event.timeStamp || performance.now();
+    const dt = Math.max(1, now - g.lastT);
+    const frameDy = event.clientY - g.lastY;
+    g.velocity = g.velocity * 0.55 + (frameDy / dt) * 0.45;
+    g.lastY = event.clientY;
+    g.lastT = now;
 
-    const delta = startYRef.current - event.clientY; // up = positive
-    if (!swipingRef.current) {
-      if (delta > SWIPE_ARM) {
-        swipingRef.current = true;
+    const dx = event.clientX - g.startX;
+    const dy = g.startY - event.clientY; // up = positive
+
+    if (!g.axis) {
+      if (Math.abs(dx) < SWIPE_ARM && Math.abs(dy) < SWIPE_ARM) return;
+      if (Math.abs(dy) > Math.abs(dx) * 1.1 && dy > 0) {
+        g.axis = 'vertical';
+        phaseRef.current = PHASE.DRAGGING;
         setHolding(false);
-        setDragging(true);
+        setDraggingUi(true);
       } else {
+        // Not an upward swipe — release capture so the browser/page stays free.
+        g.axis = 'ignored';
+        if (g.captured) {
+          try {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          } catch {
+            /* ignore */
+          }
+          g.captured = false;
+        }
+        gestureRef.current = null;
+        phaseRef.current = PHASE.IDLE;
         return;
       }
     }
 
+    if (g.axis !== 'vertical') return;
+    if (phaseRef.current !== PHASE.DRAGGING) return;
+
     const viewportH = window.innerHeight || 800;
-    const raw = Math.max(delta, 0);
-    const resisted = raw * (1 - Math.min(raw / (viewportH * 2.2), 0.32));
-    const next = -Math.min(resisted, viewportH * 0.45);
-    dragOffsetRef.current = next;
-    y.set(next);
+    const raw = Math.max(dy, 0);
+    const resisted = raw * (1 - Math.min(raw / (viewportH * 2.4), 0.28));
+    const nextY = -Math.min(resisted, viewportH * 0.42);
+    y.set(nextY);
 
-    const progress = Math.min(1, -next / SWIPE_THRESHOLD);
-    opacity.set(Math.max(0.55, 1 - progress * 0.35));
-    scale.set(1 - progress * 0.02);
+    const p = Math.min(1, -nextY / SWIPE_COMMIT);
+    opacity.set(Math.max(0.62, 1 - p * 0.28));
+    scale.set(1 - p * 0.015);
 
-    const flickUp = velocityRef.current < -0.55;
-    if (-next >= SWIPE_THRESHOLD || (flickUp && -next >= SWIPE_THRESHOLD * 0.55)) {
-      // Lock exit before releasing capture so lostpointercapture cannot snap-back
-      finishEnter(true);
-      try {
-        event.currentTarget.releasePointerCapture?.(event.pointerId);
-      } catch {
-        /* ignore */
+    if (event.cancelable) event.preventDefault();
+
+    const flicked = g.velocity < -SWIPE_FLICK && -nextY >= SWIPE_COMMIT * 0.45;
+    if (-nextY >= SWIPE_COMMIT || flicked) {
+      beginExit(true);
+      // Drop capture after phase lock so lostpointercapture cannot snap-back.
+      if (g.captured) {
+        try {
+          event.currentTarget.releasePointerCapture?.(event.pointerId);
+        } catch {
+          /* ignore */
+        }
       }
-      resetPointer();
+      gestureRef.current = null;
     }
   };
 
-  const onSwipePointerEnd = (event) => {
-    if (exitingRef.current || enteredRef.current) {
-      resetPointer();
+  const endSwipeGesture = (event) => {
+    const g = gestureRef.current;
+    // Exit already owns the animation — ignore late pointerup/cancel/lostcapture.
+    if (phaseRef.current === PHASE.EXITING || phaseRef.current === PHASE.DONE) {
+      gestureRef.current = null;
       return;
     }
-    if (pointerIdRef.current == null || event.pointerId !== pointerIdRef.current) {
+    if (!g || (event?.pointerId != null && event.pointerId !== g.id)) {
       return;
     }
 
-    const traveled = -dragOffsetRef.current;
-    const flicked = velocityRef.current < -0.45 && traveled >= SWIPE_THRESHOLD * 0.4;
-    const shouldEnter =
-      swipingRef.current && (traveled >= SWIPE_THRESHOLD * 0.85 || flicked);
+    const wasVertical = g.axis === 'vertical';
+    const traveled = -y.get();
+    const velocity = g.velocity;
+    gestureRef.current = null;
 
-    try {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    } catch {
-      /* ignore */
+    if (g.captured) {
+      try {
+        event?.currentTarget?.releasePointerCapture?.(g.id);
+      } catch {
+        /* ignore */
+      }
     }
 
-    resetPointer();
-    setDragging(false);
+    if (!wasVertical || phaseRef.current !== PHASE.DRAGGING) {
+      phaseRef.current = PHASE.IDLE;
+      setDraggingUi(false);
+      setHold(false);
+      return;
+    }
 
-    if (shouldEnter) {
-      finishEnter(true);
+    const flicked = velocity < -0.42 && traveled >= SWIPE_COMMIT * 0.35;
+    if (traveled >= SWIPE_COMMIT * 0.82 || flicked) {
+      beginExit(true);
       return;
     }
 
@@ -430,29 +547,33 @@ export function MenuEntrySplash({
     setHold(false);
   };
 
-  const holdHandlers = {
-    onPointerDown: (event) => {
-      if (event.button != null && event.button !== 0) return;
-      setHold(true);
-    },
-    onPointerUp: () => setHold(false),
-    onPointerCancel: () => setHold(false),
-    onPointerLeave: () => setHold(false),
-  };
-
   return (
     <motion.div
-      className="guest-menu guest-menu--experience fixed inset-0 z-[80] select-none touch-manipulation"
+      ref={rootRef}
+      className="guest-menu guest-menu--experience fixed inset-0 z-[80] select-none"
       style={{
         y,
         opacity,
         scale,
-        pointerEvents: exiting ? 'none' : 'auto',
         background: BG,
         willChange: 'transform, opacity',
         transformOrigin: 'center top',
+        pointerEvents: exitingUi ? 'none' : 'auto',
+        // Allow vertical browser gestures outside the swipe strip;
+        // the strip itself uses touch-action: none.
+        touchAction: exitingUi ? 'none' : 'manipulation',
       }}
-      {...holdHandlers}
+      onPointerDown={(event) => {
+        if (phaseRef.current !== PHASE.IDLE) return;
+        if (event.button != null && event.button !== 0) return;
+        setHold(true);
+      }}
+      onPointerUp={() => {
+        if (phaseRef.current === PHASE.IDLE) setHold(false);
+      }}
+      onPointerCancel={() => {
+        if (phaseRef.current === PHASE.IDLE) setHold(false);
+      }}
     >
       <div
         className="guest-experience-shell relative mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col overflow-hidden"
@@ -484,7 +605,7 @@ export function MenuEntrySplash({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              finishEnter(false);
+              beginExit(false);
             }}
             onPointerDown={(event) => event.stopPropagation()}
             className="shrink-0 rounded-full border border-stone-200/90 bg-[#F3F1ED] px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-600 transition active:scale-[0.98]"
@@ -494,11 +615,12 @@ export function MenuEntrySplash({
         </div>
 
         <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 text-center">
+          {/* Opacity-only intro — never animate transform here (conflicts with parent y/scale). */}
           <div
-            className="relative h-[8.5rem] w-[8.5rem] shrink-0 overflow-hidden rounded-full bg-white"
+            className="menu-splash-fade relative h-[8.5rem] w-[8.5rem] shrink-0 overflow-hidden rounded-full bg-white"
             style={{
               boxShadow: `0 0 0 1px rgba(232,93,36,0.18), 0 18px 40px -22px rgba(28,25,23,0.28)`,
-              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease both',
+              animationDelay: '0ms',
             }}
           >
             {logoSrc ? (
@@ -519,30 +641,22 @@ export function MenuEntrySplash({
           </div>
 
           <h1
-            className="mt-8 max-w-[18rem] font-serif text-[1.85rem] font-medium leading-[1.18] tracking-tight sm:text-[2.05rem]"
-            style={{
-              color: INK,
-              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.06s both',
-            }}
+            className="menu-splash-fade mt-8 max-w-[18rem] font-serif text-[1.85rem] font-medium leading-[1.18] tracking-tight sm:text-[2.05rem]"
+            style={{ color: INK, animationDelay: '60ms' }}
           >
             Welcome to {name}
           </h1>
 
           <p
-            className="mt-3 max-w-[16rem] text-[14px] leading-relaxed"
-            style={{
-              color: MUTED,
-              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.1s both',
-            }}
+            className="menu-splash-fade mt-3 max-w-[16rem] text-[14px] leading-relaxed"
+            style={{ color: MUTED, animationDelay: '100ms' }}
           >
             {tagline}
           </p>
 
           <div
-            className="mt-8 flex w-full max-w-[20rem] items-center gap-3"
-            style={{
-              animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.14s both',
-            }}
+            className="menu-splash-fade mt-8 flex w-full max-w-[20rem] items-center gap-3"
+            style={{ animationDelay: '140ms' }}
           >
             <div className="h-px flex-1 bg-stone-300/80" />
             <p
@@ -556,32 +670,43 @@ export function MenuEntrySplash({
         </div>
 
         <div
+          ref={swipeZoneRef}
           className="relative z-10 mx-auto w-full max-w-md space-y-3 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2"
           style={{
-            animation: exiting || dragging ? undefined : 'menu-splash-in 0.65s ease 0.18s both',
+            animationDelay: '180ms',
+            // Critical for Android/iOS: this strip owns the gesture; no browser pan.
+            touchAction: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
           }}
           onPointerDown={(event) => {
             event.stopPropagation();
             onSwipePointerDown(event);
           }}
           onPointerMove={onSwipePointerMove}
-          onPointerUp={onSwipePointerEnd}
-          onPointerCancel={onSwipePointerEnd}
-          onLostPointerCapture={onSwipePointerEnd}
+          onPointerUp={endSwipeGesture}
+          onPointerCancel={endSwipeGesture}
+          onLostPointerCapture={endSwipeGesture}
         >
-          <SwipeUpHint
-            accent={ACCENT}
-            reducedMotion={reduceMotion}
-            active={dragging}
-          />
+          <div className="menu-splash-fade" style={{ animationDelay: '180ms' }}>
+            <SwipeUpHint
+              accent={ACCENT}
+              reducedMotion={reduceMotion}
+              active={draggingUi}
+            />
+          </div>
 
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              if (swipingRef.current || Math.abs(dragOffsetRef.current) > 12) return;
-              finishEnter(false);
+              if (phaseRef.current === PHASE.DRAGGING) return;
+              if (phaseRef.current === PHASE.EXITING || phaseRef.current === PHASE.DONE) {
+                return;
+              }
+              beginExit(false);
             }}
+            onPointerDown={(event) => event.stopPropagation()}
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99]"
             style={{
               background: ACCENT,
@@ -596,10 +721,11 @@ export function MenuEntrySplash({
           <div className="w-full space-y-2.5" aria-live="polite">
             <div className="h-[3px] overflow-hidden rounded-full bg-stone-200">
               <div
-                className="h-full rounded-full transition-[width] duration-100 ease-linear"
+                className="h-full rounded-full"
                 style={{
                   width: `${Math.min(100, progress * 100)}%`,
                   background: ACCENT,
+                  // Width updates are infrequent (throttled); no CSS transition fighting.
                 }}
               />
             </div>
@@ -607,7 +733,7 @@ export function MenuEntrySplash({
               className="flex items-center justify-center gap-1.5 text-[12px]"
               style={{ color: MUTED }}
             >
-              {dragging ? (
+              {draggingUi ? (
                 <span>Release to enter menu</span>
               ) : holding ? (
                 <>
@@ -625,14 +751,18 @@ export function MenuEntrySplash({
       </div>
 
       <style>{`
-        @keyframes menu-splash-in {
-          from {
-            opacity: 0;
-            transform: translateY(14px) scale(0.985);
-          }
-          to {
+        /* Opacity-only — must NOT touch transform (parent owns translate/scale). */
+        @keyframes menu-splash-fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .menu-splash-fade {
+          animation: menu-splash-fade-in 0.55s ease both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .menu-splash-fade {
+            animation: none;
             opacity: 1;
-            transform: translateY(0) scale(1);
           }
         }
       `}</style>
