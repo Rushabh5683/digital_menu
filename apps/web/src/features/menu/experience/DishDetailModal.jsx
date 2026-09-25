@@ -126,6 +126,7 @@ export function DishDetailModal({
         if (Math.abs(dx) < PAGE_ARM && Math.abs(dy) < PAGE_ARM) return;
         if (Math.abs(dx) > Math.abs(dy) * 1.25) {
           session.mode = 'page';
+          swipe.cancelGesture?.();
         } else if (dy > 0) {
           // Vertical-down → sheet dismiss owns the gesture
           session.mode = 'dismiss';
@@ -143,7 +144,7 @@ export function DishDetailModal({
       setPageX(next);
       if (event.cancelable) event.preventDefault();
     },
-    [canPage, swipe.dragging, swipe.dismissing],
+    [canPage, swipe.dragging, swipe.dismissing, swipe.cancelGesture],
   );
 
   const onPagePointerEnd = useCallback(
@@ -165,33 +166,17 @@ export function DishDetailModal({
     [canPage, goToSibling],
   );
 
+  // Paging only on the scroller. Dismiss is owned by panelProps on the sheet shell
+  // so a downward drag works from anywhere on the card (Android + iOS).
   const contentPointerProps = {
-    onPointerDown: (event) => {
-      swipe.scrollProps.onPointerDown?.(event);
-      onPagePointerDown(event);
-    },
+    onPointerDown: onPagePointerDown,
     onPointerMove: (event) => {
-      if (swipe.dragging || swipe.dismissing) {
-        swipe.scrollProps.onPointerMove?.(event);
-        return;
-      }
+      if (swipe.dragging || swipe.dismissing) return;
       onPagePointerMove(event);
-      if (pageSessionRef.current?.mode === 'page') return;
-      swipe.scrollProps.onPointerMove?.(event);
     },
-    onPointerUp: (event) => {
-      const paging = pageSessionRef.current?.mode === 'page';
-      onPagePointerEnd(event);
-      if (!paging) swipe.scrollProps.onPointerUp?.(event);
-    },
-    onPointerCancel: (event) => {
-      onPagePointerEnd(event);
-      swipe.scrollProps.onPointerCancel?.(event);
-    },
-    onLostPointerCapture: (event) => {
-      onPagePointerEnd(event);
-      swipe.scrollProps.onLostPointerCapture?.(event);
-    },
+    onPointerUp: onPagePointerEnd,
+    onPointerCancel: onPagePointerEnd,
+    onLostPointerCapture: onPagePointerEnd,
   };
 
   if (!dish) return null;
@@ -271,8 +256,12 @@ export function DishDetailModal({
             ref={swipe.panelRef}
             className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={panelStyle}
+            {...swipe.panelProps}
           >
-          <div className="absolute inset-x-0 top-0 z-30 flex justify-center">
+          <div
+            className="absolute inset-x-0 top-0 z-30 flex justify-center"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
             <SheetSwipeAffordance variant="hero" {...swipe.handleProps} />
           </div>
 
