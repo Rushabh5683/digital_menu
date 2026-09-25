@@ -77,6 +77,19 @@ function paintBackdrop(el, y, { immediate = true, dismissing = false } = {}) {
     : `opacity ${dismissing ? EXIT_MS : SNAP_MS}ms ${EXIT_EASE}`;
 }
 
+function hideGone(panelEl, backdropEl) {
+  if (panelEl) {
+    panelEl.style.visibility = 'hidden';
+    panelEl.style.pointerEvents = 'none';
+    panelEl.style.opacity = '0';
+  }
+  if (backdropEl) {
+    backdropEl.style.visibility = 'hidden';
+    backdropEl.style.opacity = '0';
+    backdropEl.style.pointerEvents = 'none';
+  }
+}
+
 /**
  * One-finger swipe-down dismiss for guest menu bottom sheets.
  *
@@ -99,9 +112,13 @@ export function useSheetSwipeDismiss(
   const velocityRef = useRef(0);
   const dismissingRef = useRef(false);
   const finishingRef = useRef(false);
+  const closedRef = useRef(false);
   const closeTimerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
   const [dragging, setDragging] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+
+  onCloseRef.current = onClose;
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current) {
@@ -124,8 +141,39 @@ export function useSheetSwipeDismiss(
     }
   }, []);
 
+  const syncScrollTouchAction = useCallback(() => {
+    // no-op placeholder — touch-action is managed during active dismiss only
+  }, []);
+
+  const resetVisualsForOpen = useCallback(() => {
+    closedRef.current = false;
+    dismissingRef.current = false;
+    finishingRef.current = false;
+    offsetRef.current = 0;
+    rawDyRef.current = 0;
+    setDismissing(false);
+    setDragging(false);
+    const panel = panelRef.current;
+    const backdrop = backdropRef.current;
+    if (panel) {
+      panel.style.transform = '';
+      panel.style.opacity = '';
+      panel.style.transition = '';
+      panel.style.willChange = '';
+      panel.style.visibility = '';
+      panel.style.pointerEvents = '';
+    }
+    if (backdrop) {
+      backdrop.style.opacity = '';
+      backdrop.style.transition = '';
+      backdrop.style.visibility = '';
+      backdrop.style.pointerEvents = '';
+    }
+    syncScrollTouchAction();
+  }, [syncScrollTouchAction]);
+
   const playExitThenClose = useCallback(() => {
-    if (dismissingRef.current) return;
+    if (dismissingRef.current || closedRef.current) return;
     dismissingRef.current = true;
     finishingRef.current = true;
     setDismissing(true);
@@ -144,7 +192,6 @@ export function useSheetSwipeDismiss(
     paintPanel(panelRef.current, fromY, { immediate: true, dismissing: false });
     paintBackdrop(backdropRef.current, fromY, { immediate: true, dismissing: false });
 
-    // Next frame: animate to off-screen + fade
     requestAnimationFrame(() => {
       offsetRef.current = exitY;
       paintPanel(panelRef.current, exitY, { immediate: false, dismissing: true });
@@ -154,24 +201,19 @@ export function useSheetSwipeDismiss(
     clearCloseTimer();
     closeTimerRef.current = window.setTimeout(() => {
       closeTimerRef.current = null;
-      onClose?.();
-      dismissingRef.current = false;
-      finishingRef.current = false;
-      setDismissing(false);
-      offsetRef.current = 0;
-      rawDyRef.current = 0;
-      if (panelRef.current) {
-        panelRef.current.style.transform = '';
-        panelRef.current.style.opacity = '';
-        panelRef.current.style.transition = '';
-        panelRef.current.style.willChange = '';
-      }
-      if (backdropRef.current) {
-        backdropRef.current.style.opacity = '';
-        backdropRef.current.style.transition = '';
-      }
+      closedRef.current = true;
+
+      // Keep the sheet painted as fully gone. NEVER clear transform/opacity to
+      // defaults here — that flash-reappears the card on iOS before unmount.
+      paintPanel(panelRef.current, exitY, { immediate: true, dismissing: true });
+      paintBackdrop(backdropRef.current, exitY, { immediate: true, dismissing: true });
+      hideGone(panelRef.current, backdropRef.current);
+
+      onCloseRef.current?.();
+      // Do not setDismissing(false) / reset styles — host should unmount (or
+      // reset via enabled→true on next open).
     }, EXIT_MS + 32);
-  }, [clearCloseTimer, lockScroll, onClose]);
+  }, [clearCloseTimer, lockScroll]);
 
   const snapBack = useCallback(() => {
     finishingRef.current = true;
@@ -184,22 +226,42 @@ export function useSheetSwipeDismiss(
     paintBackdrop(backdropRef.current, 0, { immediate: false, dismissing: false });
     window.setTimeout(() => {
       finishingRef.current = false;
-      if (panelRef.current && !dismissingRef.current) {
-        panelRef.current.style.transform = '';
-        panelRef.current.style.opacity = '';
-        panelRef.current.style.transition = '';
-        panelRef.current.style.willChange = '';
-      }
-      if (backdropRef.current && !dismissingRef.current) {
-        backdropRef.current.style.opacity = '';
-        backdropRef.current.style.transition = '';
+      if (!dismissingRef.current && !closedRef.current) {
+        const panel = panelRef.current;
+        const backdrop = backdropRef.current;
+        if (panel) {
+          panel.style.transform = '';
+          panel.style.opacity = '';
+          panel.style.transition = '';
+          panel.style.willChange = '';
+        }
+        if (backdrop) {
+          backdrop.style.opacity = '';
+          backdrop.style.transition = '';
+        }
+        syncScrollTouchAction();
       }
     }, SNAP_MS + 24);
-  }, [lockScroll]);
+  }, [lockScroll, syncScrollTouchAction]);
+
+  const cancelGesture = useCallback(() => {
+    if (dismissingRef.current || closedRef.current) return;
+    sessionRef.current = null;
+    finishingRef.current = false;
+    if (offsetRef.current > 0 || dragging) {
+      offsetRef.current = 0;
+      rawDyRef.current = 0;
+      setDragging(false);
+      lockScroll(false);
+      paintPanel(panelRef.current, 0, { immediate: true });
+      paintBackdrop(backdropRef.current, 0, { immediate: true });
+      syncScrollTouchAction();
+    }
+  }, [dragging, lockScroll, syncScrollTouchAction]);
 
   const endSession = useCallback(
     (shouldClose) => {
-      if (dismissingRef.current) return;
+      if (dismissingRef.current || closedRef.current) return;
       if (shouldClose) {
         playExitThenClose();
         return;
@@ -211,10 +273,14 @@ export function useSheetSwipeDismiss(
 
   const begin = useCallback(
     (event, { force = false } = {}) => {
-      if (!enabled || dismissingRef.current || finishingRef.current) return;
+      if (!enabled || dismissingRef.current || finishingRef.current || closedRef.current) {
+        return;
+      }
       if (event.button != null && event.button !== 0) return;
       if (event.isPrimary === false) return;
 
+      // Ignore secondary interactive controls for force-capture, but still allow
+      // dismiss after a clear downward drag (handled once axis locks).
       finishingRef.current = false;
       sessionRef.current = {
         id: event.pointerId,
@@ -233,20 +299,20 @@ export function useSheetSwipeDismiss(
       if (force) {
         setDragging(true);
         lockScroll(true);
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        } catch {
+          /* ignore */
+        }
       }
-
-      try {
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-      } catch {
-        /* ignore */
-      }
+      // Non-force: capture only after vertical-down axis lock (preserves scroll / paging).
     },
     [enabled, lockScroll],
   );
 
   const move = useCallback(
     (event) => {
-      if (dismissingRef.current || finishingRef.current) return;
+      if (dismissingRef.current || finishingRef.current || closedRef.current) return;
       const session = sessionRef.current;
       if (!session || event.pointerId !== session.id) return;
 
@@ -265,7 +331,13 @@ export function useSheetSwipeDismiss(
           session.active = true;
           setDragging(true);
           lockScroll(true);
+          try {
+            session.target?.setPointerCapture?.(session.id);
+          } catch {
+            /* ignore */
+          }
         } else {
+          // Horizontal or upward — abandon dismiss so paging/scroll can proceed.
           sessionRef.current = null;
           return;
         }
@@ -289,7 +361,6 @@ export function useSheetSwipeDismiss(
         typeof window !== 'undefined'
           ? Math.max(window.innerHeight, window.visualViewport?.height || 0) * 0.75
           : 560;
-      // Light resistance for feel only — commit uses rawDy, not this value.
       const resisted = dy * (1 - Math.min(dy / (max * 2.6), 0.18));
       const next = Math.min(resisted, max);
       offsetRef.current = next;
@@ -303,8 +374,7 @@ export function useSheetSwipeDismiss(
 
   const end = useCallback(
     (event) => {
-      if (dismissingRef.current) return;
-      // Ignore duplicate end from lostpointercapture after pointerup already finished.
+      if (dismissingRef.current || closedRef.current) return;
       if (finishingRef.current && !sessionRef.current) return;
 
       const session = sessionRef.current;
@@ -315,11 +385,9 @@ export function useSheetSwipeDismiss(
       const traveled = offsetRef.current;
       const flicked =
         velocityRef.current > velocityThreshold && rawDy >= threshold * 0.28;
-      // Commit on RAW finger distance so Android resistance cannot block close.
       const shouldClose =
         session.active && (rawDy >= threshold || traveled >= threshold || flicked);
 
-      // Mark finishing BEFORE releaseCapture so lostpointercapture is a no-op.
       finishingRef.current = true;
       const pointerId = session.id;
       const target = session.target || event?.currentTarget;
@@ -336,7 +404,47 @@ export function useSheetSwipeDismiss(
     [endSession, threshold, velocityThreshold],
   );
 
-  // Non-passive document touchmove while dragging so iOS/Android can't rubber-band.
+  // At-top vertical-down: preventDefault early so Android doesn't steal the gesture
+  // for native scroll — enables dismiss from anywhere on the card.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const panel = panelRef.current;
+    if (!panel) return undefined;
+
+    const onTouchMove = (event) => {
+      const session = sessionRef.current;
+      if (!session || dismissingRef.current || closedRef.current) return;
+
+      if (session.active) {
+        if (event.cancelable) event.preventDefault();
+        return;
+      }
+
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      const dy = touch.clientY - session.startY;
+      const dx = touch.clientX - session.startX;
+      if (dy > 8 && dy >= Math.abs(dx) * 0.9) {
+        const scroller = scrollRef.current;
+        if (session.force || !scroller || scroller.scrollTop <= 1) {
+          if (event.cancelable) event.preventDefault();
+        }
+      }
+    };
+
+    panel.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => panel.removeEventListener('touchmove', onTouchMove);
+  }, [enabled, dismissing]);
+
+  // Reset cleanly when the sheet is shown again after a close.
+  const wasEnabledRef = useRef(false);
+  useEffect(() => {
+    if (enabled && !wasEnabledRef.current) {
+      resetVisualsForOpen();
+    }
+    wasEnabledRef.current = Boolean(enabled);
+  }, [enabled, resetVisualsForOpen]);
+
   useEffect(() => {
     if (!dragging) return undefined;
     const onTouchMove = (event) => {
@@ -347,9 +455,8 @@ export function useSheetSwipeDismiss(
     return () => document.removeEventListener('touchmove', onTouchMove);
   }, [dragging]);
 
-  // Re-apply DOM paint after React style reconciliation (prevents transform wipe).
   useLayoutEffect(() => {
-    if (dismissingRef.current) return;
+    if (dismissingRef.current || closedRef.current) return;
     if (dragging || offsetRef.current > 0) {
       paintPanel(panelRef.current, offsetRef.current, {
         immediate: true,
@@ -376,7 +483,6 @@ export function useSheetSwipeDismiss(
     onPointerUp: end,
     onPointerCancel: end,
     onLostPointerCapture: (event) => {
-      // Only treat as end if this gesture is still live (not after a clean pointerup).
       if (!sessionRef.current || finishingRef.current || dismissingRef.current) return;
       end(event);
     },
@@ -393,14 +499,14 @@ export function useSheetSwipeDismiss(
     },
   };
 
+  /** Same as scrollProps — attach to the whole panel so dismiss works anywhere. */
+  const panelProps = scrollProps;
+
   const active = dragging || dismissing || offsetRef.current > 0;
 
-  // React style fallback for first paint / hosts that don't attach panelRef yet.
-  // During gesture, paintPanel writes transform directly (preferred).
   const panelStyle =
     dismissing || dragging
       ? {
-          // Keep host from applying a conflicting transition while we paint via ref.
           transition: 'none',
           willChange: 'transform, opacity',
           overscrollBehavior: 'none',
@@ -426,5 +532,7 @@ export function useSheetSwipeDismiss(
     backdropStyle,
     handleProps,
     scrollProps,
+    panelProps,
+    cancelGesture,
   };
 }
