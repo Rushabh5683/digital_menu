@@ -242,9 +242,9 @@ export function DishDetailModal({
   const panelStyle = {
     maxHeight: 'min(92dvh, calc(100dvh - 0.5rem))',
     ...(swipe.panelStyle || {}),
-    ...(pageX
+    ...(pageX && !swipe.dragging && !swipe.dismissing
       ? {
-          transform: `translate3d(${pageX}px, ${swipe.offsetY || 0}px, 0)`,
+          transform: `translate3d(${pageX}px, 0, 0)`,
           transition: 'none',
           willChange: 'transform',
         }
@@ -260,21 +260,15 @@ export function DishDetailModal({
         <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
           <button
             type="button"
+            ref={swipe.backdropRef}
             className="absolute inset-0 cursor-default bg-stone-900/40"
             aria-label="Close dish detail"
             onClick={onClose}
             style={swipe.backdropStyle}
           />
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            // Release Framer's y when swipe-dismiss is active so CSS transform owns the sheet.
-            animate={
-              swipe.active
-                ? false
-                : { opacity: 1, y: 0 }
-            }
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          {/* Plain div owns dismiss transform — Framer must not control y on this node. */}
+          <div
+            ref={swipe.panelRef}
             className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={panelStyle}
           >
@@ -322,7 +316,8 @@ export function DishDetailModal({
           <div
             ref={scrollRef}
             onScroll={handleContentScroll}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-none no-scrollbar"
+            style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'none' }}
             {...contentPointerProps}
           >
             <motion.div
@@ -698,7 +693,7 @@ export function DishDetailModal({
               </button>
             ) : null}
           </div>
-          </motion.div>
+          </div>
         </div>
       </div>
     </AnimatePresence>
