@@ -94,7 +94,9 @@ export function DishDetailModal({
     pageXRef.current = 0;
     pageSessionRef.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [dish?.id, scrollRef]);
+    // At top → touch-action:none (same as icon) before the next gesture.
+    requestAnimationFrame(() => swipe.syncTouchAction?.());
+  }, [dish?.id, scrollRef, swipe.syncTouchAction]);
 
   const onPagePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -128,7 +130,7 @@ export function DishDetailModal({
           session.mode = 'page';
           swipe.cancelGesture?.();
         } else if (dy > 0) {
-          // Vertical-down → sheet dismiss owns the gesture
+          // Vertical-down → sheet dismiss owns the gesture (panel capture).
           session.mode = 'dismiss';
           return;
         } else {
@@ -166,14 +168,10 @@ export function DishDetailModal({
     [canPage, goToSibling],
   );
 
-  // Paging only on the scroller. Dismiss is owned by panelProps on the sheet shell
-  // so a downward drag works from anywhere on the card (Android + iOS).
+  // Horizontal dish paging only — dismiss is owned by panel surfaceProps (capture).
   const contentPointerProps = {
     onPointerDown: onPagePointerDown,
-    onPointerMove: (event) => {
-      if (swipe.dragging || swipe.dismissing) return;
-      onPagePointerMove(event);
-    },
+    onPointerMove: onPagePointerMove,
     onPointerUp: onPagePointerEnd,
     onPointerCancel: onPagePointerEnd,
     onLostPointerCapture: onPagePointerEnd,
@@ -222,6 +220,7 @@ export function DishDetailModal({
     if (!hero || !scroller) return;
     const threshold = Math.max(72, hero.offsetHeight * 0.55);
     setCompactHeader(scroller.scrollTop > threshold);
+    swipe.syncTouchAction?.();
   }
 
   const panelStyle = {
@@ -256,6 +255,7 @@ export function DishDetailModal({
             ref={swipe.panelRef}
             className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={panelStyle}
+            {...swipe.surfaceProps}
           >
           <div className="absolute inset-x-0 top-0 z-30 flex justify-center">
             <SheetSwipeAffordance variant="hero" {...swipe.handleProps} />
@@ -303,7 +303,12 @@ export function DishDetailModal({
             ref={scrollRef}
             onScroll={handleContentScroll}
             className="min-h-0 flex-1 overflow-y-auto overscroll-none no-scrollbar"
-            style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'none' }}
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehaviorY: 'none',
+              // At scroll-top the hook sets touch-action:none (same as the icon).
+              // When scrolled, it restores pan-y so content can scroll normally.
+            }}
             {...contentPointerProps}
           >
             <motion.div
