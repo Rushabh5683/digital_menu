@@ -276,12 +276,14 @@ export function MyOrderDrawer({
     >
       <button
         type="button"
+        ref={swipe.backdropRef}
         className="drawer-backdrop absolute inset-0 bg-stone-900/40"
         aria-label="Close order"
         onClick={onClose}
         style={swipe.backdropStyle}
       />
       <div
+        ref={swipe.panelRef}
         className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl"
         style={swipe.panelStyle}
       >

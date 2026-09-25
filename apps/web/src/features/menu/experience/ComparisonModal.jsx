@@ -145,17 +145,15 @@ export function ComparisonModal({
         <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
           <button
             type="button"
+            ref={swipe.backdropRef}
             className="absolute inset-0 cursor-default bg-stone-900/40"
             aria-label="Close comparison"
             onClick={onClose}
             style={swipe.backdropStyle}
           />
 
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={swipe.active ? false : { opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          <div
+            ref={swipe.panelRef}
             className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={swipe.panelStyle}
           >
@@ -451,7 +449,7 @@ export function ComparisonModal({
                 Done
               </button>
             </div>
-          </motion.div>
+          </div>
         </div>
       </div>
     </AnimatePresence>

@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag, Check } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { formatPrice, dishImage, parsePrice } from './lib/formatters.js';
 import { useSheetSwipeDismiss, SheetSwipeAffordance } from './useSheetSwipeDismiss.jsx';
@@ -95,16 +94,14 @@ export function ShortlistDrawer({
     >
       <button
         type="button"
+        ref={swipe.backdropRef}
         className="absolute inset-0 cursor-default bg-stone-900/40"
         aria-label="Close shortlist"
         onClick={onClose}
         style={swipe.backdropStyle}
       />
-      <motion.div
-        initial={{ opacity: 0, y: 36 }}
-        animate={swipe.active ? false : { opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 36 }}
-        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      <div
+        ref={swipe.panelRef}
         className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
         style={swipe.panelStyle}
       >
@@ -380,7 +377,7 @@ export function ShortlistDrawer({
             </div>
           </div>
         ) : null}
-      </motion.div>
+      </div>
     </div>
   );
 }
