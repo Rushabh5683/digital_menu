@@ -3,7 +3,7 @@ import { X, RotateCcw, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { DIETARY_TAG_GROUPS } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
-import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
+import { useSheetSwipeDismiss, SheetSwipeAffordance } from './useSheetSwipeDismiss.jsx';
 
 const SPICE_TAGS = ['Mild', 'Spicy', 'Hot'];
 
@@ -93,11 +93,12 @@ export function FilterSheet({
         />
         <motion.div
           initial={{ opacity: 0, scale: 0.98, y: 30 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
+          animate={swipe.active ? false : { opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: 30 }}
           className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
           style={swipe.panelStyle}
         >
+        <SheetSwipeAffordance {...swipe.handleProps} />
         <div
           className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3.5 sm:px-5"
           {...swipe.handleProps}

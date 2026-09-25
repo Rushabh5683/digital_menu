@@ -5,7 +5,7 @@ import { api } from '../../../shared/api/client.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { Alert } from '../../../shared/ui/Alert.jsx';
 import { formatPrice } from '../lib/menuUtils.js';
-import { useSheetSwipeDismiss } from '../experience/useSheetSwipeDismiss.jsx';
+import { useSheetSwipeDismiss, SheetSwipeAffordance } from '../experience/useSheetSwipeDismiss.jsx';
 import {
   buildOrderTimeline,
   formatOrderDisplayNumber,
@@ -285,6 +285,7 @@ export function MyOrderDrawer({
         className="drawer-panel relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-[0_28px_60px_rgba(60,40,15,0.28)] sm:rounded-3xl"
         style={swipe.panelStyle}
       >
+        <SheetSwipeAffordance {...swipe.handleProps} />
         <div
           className="flex shrink-0 items-start justify-between gap-3 border-b border-stone-200 bg-[#FDFBF7] px-5 py-4"
           {...swipe.handleProps}

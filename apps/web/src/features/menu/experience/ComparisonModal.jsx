@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
-import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
+import { useSheetSwipeDismiss, SheetSwipeAffordance } from './useSheetSwipeDismiss.jsx';
 
 function categoryKeyOf(dish) {
   if (!dish) return '';
@@ -153,12 +153,13 @@ export function ComparisonModal({
 
           <motion.div
             initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
+            animate={swipe.active ? false : { opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={swipe.panelStyle}
           >
+            <SheetSwipeAffordance {...swipe.handleProps} />
             <div
               className="flex shrink-0 items-center justify-between gap-2 border-b border-stone-200/70 px-3.5 py-3"
               {...swipe.handleProps}

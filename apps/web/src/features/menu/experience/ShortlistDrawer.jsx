@@ -3,7 +3,7 @@ import { X, Trash2, Plus, Minus, UtensilsCrossed, UserCheck, ShoppingBag, Check 
 import { motion } from 'framer-motion';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { formatPrice, dishImage, parsePrice } from './lib/formatters.js';
-import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
+import { useSheetSwipeDismiss, SheetSwipeAffordance } from './useSheetSwipeDismiss.jsx';
 
 /**
  * Table picks sheet — mobile-first bottom sheet aligned to the phone shell (max-w-lg).
@@ -102,12 +102,13 @@ export function ShortlistDrawer({
       />
       <motion.div
         initial={{ opacity: 0, y: 36 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={swipe.active ? false : { opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 36 }}
         transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
         className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
         style={swipe.panelStyle}
       >
+        <SheetSwipeAffordance {...swipe.handleProps} />
         <div
           className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-[#FDFBF7] p-5"
           {...swipe.handleProps}

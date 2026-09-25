@@ -16,7 +16,7 @@ import { formatPrice, dishImage } from './lib/formatters.js';
 import { getDietMarker, splitDietaryAndServesTags } from '../../../shared/constants/dietaryTags.js';
 import { useLockBodyScroll } from '../../../shared/lib/useLockBodyScroll.js';
 import { DishSteam, categoryShowsSteam } from './DishSteam.jsx';
-import { useSheetSwipeDismiss } from './useSheetSwipeDismiss.jsx';
+import { useSheetSwipeDismiss, SheetSwipeAffordance } from './useSheetSwipeDismiss.jsx';
 
 function sameCategory(a, b) {
   const left = a?.categoryId || a?.category || null;
@@ -112,7 +112,7 @@ export function DishDetailModal({
     (event) => {
       const session = pageSessionRef.current;
       if (!session || event.pointerId !== session.id) return;
-      if (swipe.dragging) {
+      if (swipe.dragging || swipe.dismissing) {
         pageSessionRef.current = null;
         setPageX(0);
         pageXRef.current = 0;
@@ -124,8 +124,12 @@ export function DishDetailModal({
 
       if (!session.mode) {
         if (Math.abs(dx) < PAGE_ARM && Math.abs(dy) < PAGE_ARM) return;
-        if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (Math.abs(dx) > Math.abs(dy) * 1.25) {
           session.mode = 'page';
+        } else if (dy > 0) {
+          // Vertical-down → sheet dismiss owns the gesture
+          session.mode = 'dismiss';
+          return;
         } else {
           session.mode = 'other';
           return;
@@ -139,7 +143,7 @@ export function DishDetailModal({
       setPageX(next);
       if (event.cancelable) event.preventDefault();
     },
-    [canPage, swipe.dragging],
+    [canPage, swipe.dragging, swipe.dismissing],
   );
 
   const onPagePointerEnd = useCallback(
@@ -167,6 +171,10 @@ export function DishDetailModal({
       onPagePointerDown(event);
     },
     onPointerMove: (event) => {
+      if (swipe.dragging || swipe.dismissing) {
+        swipe.scrollProps.onPointerMove?.(event);
+        return;
+      }
       onPagePointerMove(event);
       if (pageSessionRef.current?.mode === 'page') return;
       swipe.scrollProps.onPointerMove?.(event);
@@ -179,6 +187,10 @@ export function DishDetailModal({
     onPointerCancel: (event) => {
       onPagePointerEnd(event);
       swipe.scrollProps.onPointerCancel?.(event);
+    },
+    onLostPointerCapture: (event) => {
+      onPagePointerEnd(event);
+      swipe.scrollProps.onLostPointerCapture?.(event);
     },
   };
 
@@ -255,16 +267,26 @@ export function DishDetailModal({
           />
           <motion.div
             initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
+            // Release Framer's y when swipe-dismiss is active so CSS transform owns the sheet.
+            animate={
+              swipe.active
+                ? false
+                : { opacity: 1, y: 0 }
+            }
             exit={{ opacity: 0, y: 40 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={panelStyle}
           >
+          <div className="absolute inset-x-0 top-0 z-30 flex justify-center">
+            <SheetSwipeAffordance variant="hero" {...swipe.handleProps} />
+          </div>
+
           <button
             id="dish-detail-close-btn"
             type="button"
             onClick={onClose}
+            onPointerDown={(event) => event.stopPropagation()}
             className="absolute right-3 top-3 z-30 cursor-pointer rounded-full bg-stone-950/70 p-2.5 text-white backdrop-blur-md transition-colors hover:bg-stone-950"
             aria-label="Close dish detail"
           >

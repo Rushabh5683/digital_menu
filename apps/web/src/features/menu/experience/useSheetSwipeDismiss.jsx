@@ -1,11 +1,56 @@
 import { useCallback, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
-const DEFAULT_THRESHOLD = 100;
-const DEFAULT_VELOCITY = 0.65; // px/ms
+const DEFAULT_THRESHOLD = 72;
+const DEFAULT_VELOCITY = 0.45; // px/ms — reachable on real phones
 const EXIT_MS = 420;
-const SNAP_MS = 380;
+const SNAP_MS = 320;
 const EXIT_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const FADE_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+/**
+ * Center-top affordance so guests know swipe-down closes the sheet.
+ * Spread `handleProps` from useSheetSwipeDismiss onto this (force dismiss).
+ */
+export function SheetSwipeAffordance({
+  variant = 'light',
+  className = '',
+  label = 'Swipe down to close',
+  ...handleProps
+}) {
+  const onHero = variant === 'hero';
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      title={label}
+      className={[
+        'flex shrink-0 touch-none cursor-grab flex-col items-center justify-center active:cursor-grabbing',
+        onHero ? 'px-6 pb-1 pt-2.5' : 'px-6 pb-1 pt-2',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      {...handleProps}
+    >
+      <span
+        className={[
+          'block h-1 w-10 rounded-full',
+          onHero ? 'bg-white/85 shadow-sm' : 'bg-stone-300',
+        ].join(' ')}
+      />
+      <ChevronDown
+        className={[
+          'mt-0.5 h-4 w-4',
+          onHero ? 'text-white/90 drop-shadow-sm' : 'text-stone-400',
+        ].join(' ')}
+        strokeWidth={2.4}
+        aria-hidden
+      />
+    </div>
+  );
+}
 
 /**
  * One-finger swipe-down dismiss for guest menu bottom sheets.
@@ -116,27 +161,31 @@ export function useSheetSwipeDismiss(
     const dx = event.clientX - session.startX;
 
     if (!session.active) {
-      if (Math.abs(dy) < 10 && Math.abs(dx) < 10) return;
-      if (Math.abs(dx) > Math.abs(dy)) {
+      if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+      // Prefer vertical-down dismiss over horizontal when clearly downward.
+      if (dy > 0 && Math.abs(dy) >= Math.abs(dx) * 0.85) {
+        const scroller = scrollRef.current;
+        if (!session.force && scroller && scroller.scrollTop > 1) {
+          sessionRef.current = null;
+          return;
+        }
+        session.active = true;
+        setDragging(true);
+      } else if (Math.abs(dx) > Math.abs(dy)) {
+        sessionRef.current = null;
+        return;
+      } else {
+        // Upward / scroll — abandon dismiss
         sessionRef.current = null;
         return;
       }
-      if (dy <= 0) {
-        sessionRef.current = null;
-        return;
-      }
-      const scroller = scrollRef.current;
-      if (!session.force && scroller && scroller.scrollTop > 1) {
-        sessionRef.current = null;
-        return;
-      }
-      session.active = true;
-      setDragging(true);
     }
 
     const now = performance.now();
     const dt = Math.max(1, now - lastTRef.current);
-    velocityRef.current = (event.clientY - lastYRef.current) / dt;
+    // EMA velocity so one noisy frame doesn't decide dismiss.
+    const frameV = (event.clientY - lastYRef.current) / dt;
+    velocityRef.current = velocityRef.current * 0.55 + frameV * 0.45;
     lastYRef.current = event.clientY;
     lastTRef.current = now;
 
@@ -146,9 +195,8 @@ export function useSheetSwipeDismiss(
       return;
     }
 
-    const max = typeof window !== 'undefined' ? window.innerHeight * 0.65 : 480;
-    // Weighted resistance so the sheet feels substantial
-    const resisted = dy * (1 - Math.min(dy / (max * 2.2), 0.28));
+    const max = typeof window !== 'undefined' ? window.innerHeight * 0.7 : 520;
+    const resisted = dy * (1 - Math.min(dy / (max * 2.4), 0.22));
     const next = Math.min(resisted, max);
     offsetRef.current = next;
     setOffsetY(next);
@@ -165,9 +213,10 @@ export function useSheetSwipeDismiss(
       if (!session) return;
       if (event && event.pointerId != null && event.pointerId !== session.id) return;
 
+      const traveled = offsetRef.current;
+      const flicked = velocityRef.current > velocityThreshold && traveled >= threshold * 0.35;
       const shouldClose =
-        session.active &&
-        (offsetRef.current >= threshold || velocityRef.current > velocityThreshold);
+        session.active && (traveled >= threshold || flicked);
 
       try {
         event?.currentTarget?.releasePointerCapture?.(session.id);
@@ -185,6 +234,7 @@ export function useSheetSwipeDismiss(
     onPointerMove: move,
     onPointerUp: end,
     onPointerCancel: end,
+    onLostPointerCapture: end,
   };
 
   const scrollProps = {
@@ -192,6 +242,7 @@ export function useSheetSwipeDismiss(
     onPointerMove: move,
     onPointerUp: end,
     onPointerCancel: end,
+    onLostPointerCapture: end,
   };
 
   const progress = Math.min(1, offsetY / Math.max(threshold, 1));
@@ -199,8 +250,8 @@ export function useSheetSwipeDismiss(
 
   const panelStyle = active
     ? {
-        transform: `translate3d(0, ${offsetY}px, 0) scale(${1 - Math.min(progress, 1) * 0.035})`,
-        opacity: dismissing ? 0 : Math.max(0.4, 1 - progress * 0.5),
+        transform: `translate3d(0, ${offsetY}px, 0) scale(${1 - Math.min(progress, 1) * 0.03})`,
+        opacity: dismissing ? 0 : Math.max(0.45, 1 - progress * 0.45),
         transition: dragging
           ? 'none'
           : [
@@ -225,6 +276,7 @@ export function useSheetSwipeDismiss(
     offsetY,
     dragging,
     dismissing,
+    active,
     panelStyle,
     backdropStyle,
     handleProps,
