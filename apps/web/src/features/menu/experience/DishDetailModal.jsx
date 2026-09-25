@@ -256,18 +256,15 @@ export function DishDetailModal({
             ref={swipe.panelRef}
             className="relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={panelStyle}
-            {...swipe.panelProps}
           >
-          <div
-            className="absolute inset-x-0 top-0 z-30 flex justify-center"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
+          <div className="absolute inset-x-0 top-0 z-30 flex justify-center">
             <SheetSwipeAffordance variant="hero" {...swipe.handleProps} />
           </div>
 
           <button
             id="dish-detail-close-btn"
             type="button"
+            data-swipe-ignore="true"
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
             className="absolute right-3 top-3 z-30 cursor-pointer rounded-full bg-stone-950/70 p-2.5 text-white backdrop-blur-md transition-colors hover:bg-stone-950"
@@ -323,10 +320,12 @@ export function DishDetailModal({
                 <img
                   src={src}
                   alt={dish.name}
+                  draggable={false}
                   referrerPolicy="no-referrer"
-                  className={`h-full w-full object-cover ${
+                  className={`pointer-events-none h-full w-full object-cover ${
                     !dish.availability ? 'grayscale-[35%]' : ''
                   }`}
+                  style={{ WebkitUserDrag: 'none', userSelect: 'none' }}
                 />
               ) : (
                 <div className="h-full w-full bg-gradient-to-br from-[#E8DFD3] to-[#C5A880]" />
