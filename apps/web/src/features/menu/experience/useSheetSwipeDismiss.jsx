@@ -23,6 +23,7 @@ export function SheetSwipeAffordance({
     <div
       role="button"
       tabIndex={0}
+      data-swipe-handle="true"
       aria-label={label}
       title={label}
       className={[
@@ -271,6 +272,24 @@ export function useSheetSwipeDismiss(
     [playExitThenClose, snapBack],
   );
 
+  const activateDismiss = useCallback(
+    (session) => {
+      if (!session || session.active) return;
+      session.active = true;
+      setDragging(true);
+      lockScroll(true);
+      // Always capture on the panel so icon + body share the same drag target.
+      const cap = panelRef.current || session.target;
+      session.captureEl = cap;
+      try {
+        cap?.setPointerCapture?.(session.id);
+      } catch {
+        /* ignore */
+      }
+    },
+    [lockScroll],
+  );
+
   const begin = useCallback(
     (event, { force = false } = {}) => {
       if (!enabled || dismissingRef.current || finishingRef.current || closedRef.current) {
@@ -279,15 +298,20 @@ export function useSheetSwipeDismiss(
       if (event.button != null && event.button !== 0) return;
       if (event.isPrimary === false) return;
 
-      // Ignore secondary interactive controls for force-capture, but still allow
-      // dismiss after a clear downward drag (handled once axis locks).
+      // Close button / explicit ignores — don't start dismiss.
+      const targetEl = event.target instanceof Element ? event.target : null;
+      if (targetEl?.closest?.('[data-swipe-ignore]')) return;
+
+      const fromHandle = Boolean(targetEl?.closest?.('[data-swipe-handle]'));
+      const useForce = force || fromHandle;
+
       finishingRef.current = false;
       sessionRef.current = {
         id: event.pointerId,
         startY: event.clientY,
         startX: event.clientX,
-        force,
-        active: Boolean(force),
+        force: useForce,
+        active: false,
         target: event.currentTarget,
       };
       lastYRef.current = event.clientY;
@@ -296,18 +320,12 @@ export function useSheetSwipeDismiss(
       rawDyRef.current = 0;
       offsetRef.current = 0;
 
-      if (force) {
-        setDragging(true);
-        lockScroll(true);
-        try {
-          event.currentTarget.setPointerCapture?.(event.pointerId);
-        } catch {
-          /* ignore */
-        }
+      // Handle/icon: same activation path as body after axis lock.
+      if (useForce) {
+        activateDismiss(sessionRef.current);
       }
-      // Non-force: capture only after vertical-down axis lock (preserves scroll / paging).
     },
-    [enabled, lockScroll],
+    [enabled, activateDismiss],
   );
 
   const move = useCallback(
@@ -328,14 +346,8 @@ export function useSheetSwipeDismiss(
             sessionRef.current = null;
             return;
           }
-          session.active = true;
-          setDragging(true);
-          lockScroll(true);
-          try {
-            session.target?.setPointerCapture?.(session.id);
-          } catch {
-            /* ignore */
-          }
+          // SAME activation as center/icon — one code path into the close animation.
+          activateDismiss(session);
         } else {
           // Horizontal or upward — abandon dismiss so paging/scroll can proceed.
           sessionRef.current = null;
@@ -364,12 +376,13 @@ export function useSheetSwipeDismiss(
       const resisted = dy * (1 - Math.min(dy / (max * 2.6), 0.18));
       const next = Math.min(resisted, max);
       offsetRef.current = next;
+      // Same live paint as icon drag.
       paintPanel(panelRef.current, next, { immediate: true });
       paintBackdrop(backdropRef.current, next, { immediate: true });
 
       if (event.cancelable) event.preventDefault();
     },
-    [lockScroll],
+    [activateDismiss],
   );
 
   const end = useCallback(
@@ -390,27 +403,33 @@ export function useSheetSwipeDismiss(
 
       finishingRef.current = true;
       const pointerId = session.id;
-      const target = session.target || event?.currentTarget;
+      const cap = session.captureEl || session.target || event?.currentTarget;
       sessionRef.current = null;
 
       try {
-        target?.releasePointerCapture?.(pointerId);
+        cap?.releasePointerCapture?.(pointerId);
       } catch {
         /* ignore */
       }
 
+      // SAME close function for icon and anywhere-on-card.
       endSession(shouldClose);
     },
     [endSession, threshold, velocityThreshold],
   );
 
-  // At-top vertical-down: preventDefault early so Android doesn't steal the gesture
-  // for native scroll — enables dismiss from anywhere on the card.
-  useEffect(() => {
+  // Android: capture-phase listeners on panel + scroller so dismiss starts from
+  // ANYWHERE on the card (not only the icon). Same begin/move/end → playExitThenClose.
+  useLayoutEffect(() => {
     if (!enabled) return undefined;
     const panel = panelRef.current;
-    if (!panel) return undefined;
+    const scroller = scrollRef.current;
+    const nodes = [panel, scroller].filter(Boolean);
+    if (nodes.length === 0) return undefined;
 
+    const onDown = (event) => begin(event, { force: false });
+    const onMove = (event) => move(event);
+    const onUp = (event) => end(event);
     const onTouchMove = (event) => {
       const session = sessionRef.current;
       if (!session || dismissingRef.current || closedRef.current) return;
@@ -425,16 +444,47 @@ export function useSheetSwipeDismiss(
       const dy = touch.clientY - session.startY;
       const dx = touch.clientX - session.startX;
       if (dy > 8 && dy >= Math.abs(dx) * 0.9) {
-        const scroller = scrollRef.current;
-        if (session.force || !scroller || scroller.scrollTop <= 1) {
+        const scrollerEl = scrollRef.current;
+        if (session.force || !scrollerEl || scrollerEl.scrollTop <= 1) {
+          // Claim the gesture before Chrome starts native scroll.
           if (event.cancelable) event.preventDefault();
+          activateDismiss(session);
+          rawDyRef.current = dy;
+          if (dy > 0) {
+            const max =
+              typeof window !== 'undefined'
+                ? Math.max(window.innerHeight, window.visualViewport?.height || 0) * 0.75
+                : 560;
+            const resisted = dy * (1 - Math.min(dy / (max * 2.6), 0.18));
+            const next = Math.min(resisted, max);
+            offsetRef.current = next;
+            paintPanel(panelRef.current, next, { immediate: true });
+            paintBackdrop(backdropRef.current, next, { immediate: true });
+          }
         }
       }
     };
 
-    panel.addEventListener('touchmove', onTouchMove, { passive: false });
-    return () => panel.removeEventListener('touchmove', onTouchMove);
-  }, [enabled, dismissing]);
+    for (const node of nodes) {
+      node.addEventListener('pointerdown', onDown, true);
+      node.addEventListener('pointermove', onMove, true);
+      node.addEventListener('pointerup', onUp, true);
+      node.addEventListener('pointercancel', onUp, true);
+      node.addEventListener('lostpointercapture', onUp, true);
+      node.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+    }
+
+    return () => {
+      for (const node of nodes) {
+        node.removeEventListener('pointerdown', onDown, true);
+        node.removeEventListener('pointermove', onMove, true);
+        node.removeEventListener('pointerup', onUp, true);
+        node.removeEventListener('pointercancel', onUp, true);
+        node.removeEventListener('lostpointercapture', onUp, true);
+        node.removeEventListener('touchmove', onTouchMove, true);
+      }
+    };
+  }, [enabled, begin, move, end, activateDismiss, dismissing]);
 
   // Reset cleanly when the sheet is shown again after a close.
   const wasEnabledRef = useRef(false);
