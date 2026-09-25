@@ -138,11 +138,13 @@ export function MenuEntrySplash({
   tableLabel,
   durationMs = SPLASH_MS,
   canFinish = true,
+  onExitStart,
   onEnter,
 }) {
   const reduceMotion = useReducedMotion();
   const rootRef = useRef(null);
   const swipeZoneRef = useRef(null);
+  const progressFillRef = useRef(null);
 
   const [holding, setHolding] = useState(false);
   const [remainingMs, setRemainingMs] = useState(durationMs);
@@ -163,12 +165,15 @@ export function MenuEntrySplash({
   const canFinishRef = useRef(canFinish);
   const reduceMotionRef = useRef(reduceMotion);
   const onEnterRef = useRef(onEnter);
+  const onExitStartRef = useRef(onExitStart);
   const animRef = useRef(null);
   const gestureRef = useRef(null);
+  const awaitingMenuRef = useRef(false);
 
   canFinishRef.current = canFinish;
   reduceMotionRef.current = reduceMotion;
   onEnterRef.current = onEnter;
+  onExitStartRef.current = onExitStart;
 
   const stopAnim = () => {
     if (animRef.current) {
@@ -196,6 +201,15 @@ export function MenuEntrySplash({
 
   const completeEnter = () => {
     if (phaseRef.current === PHASE.DONE) return;
+    // Keep splash invisible but mounted until menu data is ready — avoids blank gap.
+    if (!canFinishRef.current) {
+      awaitingMenuRef.current = true;
+      phaseRef.current = PHASE.EXITING;
+      opacity.set(0);
+      lockInteraction();
+      return;
+    }
+    awaitingMenuRef.current = false;
     phaseRef.current = PHASE.DONE;
     stopAnim();
     lockInteraction();
@@ -219,6 +233,12 @@ export function MenuEntrySplash({
     remainingRef.current = 0;
     setRemainingMs(0);
     setTimerDone(true);
+    if (progressFillRef.current) {
+      progressFillRef.current.style.transform = 'scaleX(1)';
+    }
+
+    // Let the parent reveal/mount the menu under the splash immediately.
+    onExitStartRef.current?.();
 
     stopAnim();
 
@@ -244,7 +264,6 @@ export function MenuEntrySplash({
     const duration = EXIT_MS / 1000;
 
     // Drive exit with a single primary animation; opacity/scale are secondary.
-    // onComplete is the completion source of truth (not transitionend / Promise races).
     const primary = animate(y, targetY, {
       duration,
       ease: EXIT_EASE,
@@ -266,8 +285,13 @@ export function MenuEntrySplash({
   };
 
   // Auto-enter when countdown finishes (and menu data is ready).
+  // Also finish a pending swipe-exit once canFinish becomes true.
   useEffect(() => {
     canFinishRef.current = canFinish;
+    if (awaitingMenuRef.current && canFinish) {
+      completeEnter();
+      return;
+    }
     if (
       timerDone &&
       canFinish &&
@@ -279,7 +303,8 @@ export function MenuEntrySplash({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerDone, canFinish]);
 
-  // Countdown — UI updates throttled; never runs while dragging/exiting.
+  // Countdown — progress bar updates every frame via DOM (smooth);
+  // React state only refreshes the seconds label.
   useEffect(() => {
     if (
       holding ||
@@ -294,7 +319,16 @@ export function MenuEntrySplash({
 
     lastTickRef.current = performance.now();
     let frameId = 0;
-    let lastUiWrite = 0;
+    let lastLabelWrite = 0;
+
+    const paintProgress = (leftMs) => {
+      const fill = progressFillRef.current;
+      if (!fill) return;
+      const p = 1 - leftMs / durationMs;
+      fill.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
+    };
+
+    paintProgress(remainingRef.current);
 
     const tick = (now) => {
       if (
@@ -309,9 +343,12 @@ export function MenuEntrySplash({
       const next = Math.max(0, remainingRef.current - (now - last));
       remainingRef.current = next;
 
-      // Throttle React writes (~8fps) so swipe gesture stays smooth on mobile.
-      if (now - lastUiWrite > 120 || next <= 0) {
-        lastUiWrite = now;
+      // GPU-friendly progress — no React re-render per frame.
+      paintProgress(next);
+
+      // Seconds label can update ~4×/sec without looking stuck.
+      if (now - lastLabelWrite > 250 || next <= 0) {
+        lastLabelWrite = now;
         setRemainingMs(next);
       }
 
@@ -325,7 +362,7 @@ export function MenuEntrySplash({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [holding, draggingUi, exitingUi]);
+  }, [holding, draggingUi, exitingUi, durationMs]);
 
   useEffect(
     () => () => {
@@ -358,7 +395,6 @@ export function MenuEntrySplash({
 
   if (entered) return null;
 
-  const progress = 1 - remainingMs / durationMs;
   const secondsLeft = Math.max(1, Math.ceil(remainingMs / 1000));
   const name = restaurant?.name || 'our restaurant';
   const tagline =
@@ -721,11 +757,11 @@ export function MenuEntrySplash({
           <div className="w-full space-y-2.5" aria-live="polite">
             <div className="h-[3px] overflow-hidden rounded-full bg-stone-200">
               <div
-                className="h-full rounded-full"
+                ref={progressFillRef}
+                className="h-full w-full origin-left rounded-full will-change-transform"
                 style={{
-                  width: `${Math.min(100, progress * 100)}%`,
                   background: ACCENT,
-                  // Width updates are infrequent (throttled); no CSS transition fighting.
+                  transform: 'scaleX(0)',
                 }}
               />
             </div>

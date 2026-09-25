@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Scale } from 'lucide-react';
 import { FloatingCartBar } from './components/FloatingCartBar.jsx';
 import { GuestToast } from './components/GuestToast.jsx';
-import { MenuEmptySearch, MenuErrorState, MenuLoadingState } from './components/MenuStates.jsx';
+import { MenuEmptySearch, MenuErrorState } from './components/MenuStates.jsx';
 import { TablePicker } from './components/TablePicker.jsx';
 import { CartDrawer } from './cart/CartUI.jsx';
 import { MyOrderDrawer } from './cart/OrderStatusPanel.jsx';
@@ -116,16 +116,57 @@ export function MenuPage() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [shortlistMap, setShortlistMap] = useState({});
   const [showEntrySplash, setShowEntrySplash] = useState(true);
-  const [menuFadeIn, setMenuFadeIn] = useState(false);
+  // Mount full menu under the splash only after idle / exit — keeps the
+  // countdown progress line smooth on refresh (heavy menu paint won't hitch it).
+  const [menuUnderSplash, setMenuUnderSplash] = useState(false);
 
   useEffect(() => {
     setShowEntrySplash(true);
-    setMenuFadeIn(false);
+    setMenuUnderSplash(false);
   }, [restaurantSlug]);
+
+  // Lock page scroll while the entry splash covers the menu.
+  useEffect(() => {
+    if (!showEntrySplash) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showEntrySplash]);
 
   const effectiveTableNumber = qrTableNumber || pickedTable?.tableNumber || null;
 
   const { data, isLoading, isError, error, refetch, isFetching } = useRestaurantMenu(restaurantSlug);
+
+  // Preload menu under splash during idle time so the countdown line stays smooth,
+  // while swipe-up still reveals a ready menu.
+  useEffect(() => {
+    if (!showEntrySplash || menuUnderSplash) return undefined;
+    if (isLoading || !data) return undefined;
+
+    let cancelled = false;
+    const arm = () => {
+      if (!cancelled) setMenuUnderSplash(true);
+    };
+
+    let idleId;
+    let timeoutId;
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(arm, { timeout: 1600 });
+    } else {
+      timeoutId = window.setTimeout(arm, 700);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId != null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [showEntrySplash, menuUnderSplash, isLoading, data]);
+
   const { session, status: sessionStatus } = useAnonymousSession(restaurantSlug, {
     // Wait for auth so a logged-in admin does not race a guest session create.
     enabled: Boolean(restaurantSlug) && authReady && !isStaffPreview,
@@ -535,48 +576,70 @@ export function MenuPage() {
     showAddedToast(dish.name);
   }
 
-  if (showEntrySplash) {
-    const splashRestaurant = data?.restaurant || {
-      name:
-        String(restaurantSlug || '')
-          .split('-')
-          .filter(Boolean)
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(' ') || 'our restaurant',
-    };
-    const splashTableLabel = isStaffPreview
-      ? effectiveTableNumber
-        ? `Table ${String(effectiveTableNumber).padStart(2, '0')} · Preview`
-        : 'Staff preview'
-      : (effectiveTableNumber
-          ? `Table ${String(effectiveTableNumber).padStart(2, '0')}`
-          : null) ||
-        session?.tableLabel ||
-        'Your table';
+  const splashRestaurant = data?.restaurant || {
+    name:
+      String(restaurantSlug || '')
+        .split('-')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ') || 'our restaurant',
+  };
+  const splashTableLabel = isStaffPreview
+    ? effectiveTableNumber
+      ? `Table ${String(effectiveTableNumber).padStart(2, '0')} · Preview`
+      : 'Staff preview'
+    : (effectiveTableNumber
+        ? `Table ${String(effectiveTableNumber).padStart(2, '0')}`
+        : null) ||
+      session?.tableLabel ||
+      'Your table';
 
+  const entrySplash = showEntrySplash ? (
+    <MenuEntrySplash
+      restaurant={splashRestaurant}
+      tableLabel={splashTableLabel}
+      canFinish={!isLoading && (Boolean(data) || isError)}
+      onExitStart={() => {
+        // Start mounting menu under the exiting splash so reveal is instant.
+        setMenuUnderSplash(true);
+      }}
+      onEnter={() => {
+        setShowEntrySplash(false);
+        setMenuUnderSplash(false);
+      }}
+    />
+  ) : null;
+
+  const waitingForMenuPaint =
+    showEntrySplash && !menuUnderSplash && Boolean(data) && !isError;
+
+  // Cream underlay while fetching, or while deferring heavy menu mount under splash.
+  if (isLoading || (isFetching && !data) || waitingForMenuPaint) {
     return (
-      <MenuEntrySplash
-        restaurant={splashRestaurant}
-        tableLabel={splashTableLabel}
-        canFinish={!isLoading && (Boolean(data) || isError)}
-        onEnter={() => {
-          setMenuFadeIn(true);
-          setShowEntrySplash(false);
-        }}
-      />
+      <>
+        <div
+          className="fixed inset-0 z-0 bg-[#FAF8F5]"
+          aria-busy={isLoading || (isFetching && !data) ? 'true' : undefined}
+          aria-live="polite"
+        />
+        {entrySplash}
+      </>
     );
-  }
-
-  if (isLoading || (isFetching && !data)) {
-    return <MenuLoadingState />;
   }
 
   if (isError || !data) {
     return (
-      <MenuErrorState
-        message={error?.message || 'This restaurant menu could not be found.'}
-        onRetry={() => refetch()}
-      />
+      <>
+        {!showEntrySplash ? (
+          <MenuErrorState
+            message={error?.message || 'This restaurant menu could not be found.'}
+            onRetry={() => refetch()}
+          />
+        ) : (
+          <div className="fixed inset-0 z-0 bg-[#FAF8F5]" />
+        )}
+        {entrySplash}
+      </>
     );
   }
 
@@ -591,11 +654,18 @@ export function MenuPage() {
 
   if (!isStaffPreview && needsPicker && !effectiveTableNumber) {
     return (
-      <TablePicker
-        restaurant={restaurant}
-        restaurantSlug={restaurantSlug}
-        onSelect={handlePickTable}
-      />
+      <>
+        {!showEntrySplash ? (
+          <TablePicker
+            restaurant={restaurant}
+            restaurantSlug={restaurantSlug}
+            onSelect={handlePickTable}
+          />
+        ) : (
+          <div className="fixed inset-0 z-0 bg-[#FAF8F5]" />
+        )}
+        {entrySplash}
+      </>
     );
   }
 
@@ -607,17 +677,15 @@ export function MenuPage() {
         : 'pb-[6.5rem]';
 
   return (
+    <>
     <div
       className={['guest-menu guest-menu--experience', bottomPad].join(' ')}
       style={
-        menuFadeIn
-          ? { animation: 'menu-swipe-up-in 0.72s cubic-bezier(0.16, 1, 0.3, 1) both' }
+        showEntrySplash
+          ? { pointerEvents: 'none' }
           : undefined
       }
-      onAnimationEnd={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (menuFadeIn) setMenuFadeIn(false);
-      }}
+      aria-hidden={showEntrySplash || undefined}
     >
       <div className="guest-experience-shell">
         {isStaffPreview ? (
@@ -1022,5 +1090,7 @@ export function MenuPage() {
         tableNumber={effectiveTableNumber || session?.tableNumber}
       />
     </div>
+    {entrySplash}
+    </>
   );
 }
