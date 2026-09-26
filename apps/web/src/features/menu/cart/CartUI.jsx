@@ -35,7 +35,7 @@ export function CartBar({ itemCount, total, onOpen, hasOpenOrder }) {
           <span>
             <span className="block text-sm font-bold">View cart</span>
             <span className="block text-xs text-white/65">
-              {hasOpenOrder ? 'Add to your open order' : 'Review & place order'}
+              {hasOpenOrder ? 'Add to your open order' : 'Place order'}
             </span>
           </span>
         </span>
@@ -62,7 +62,7 @@ export function CartDrawer({
   onClear,
   onPlaced,
 }) {
-  const [step, setStep] = useState('cart'); // cart | review | success
+  const [step, setStep] = useState('cart'); // cart | success
   const [error, setError] = useState(null);
   const [placing, setPlacing] = useState(false);
   const [placedOrder, setPlacedOrder] = useState(null);
@@ -176,11 +176,7 @@ export function CartDrawer({
         >
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--g-accent-deep)]">
-              {step === 'success'
-                ? 'Confirmation'
-                : step === 'review'
-                  ? 'Checkout'
-                  : 'Your cart'}
+              {step === 'success' ? 'Confirmation' : 'Your cart'}
             </p>
             <h2
               id="cart-title"
@@ -190,11 +186,7 @@ export function CartDrawer({
                 ? wasAdd
                   ? 'Items added'
                   : 'Order received'
-                : step === 'review'
-                  ? isAdding
-                    ? 'Add to order'
-                    : 'Review order'
-                  : 'Cart'}
+                : 'Cart'}
             </h2>
           </div>
           <button
@@ -281,43 +273,37 @@ export function CartDrawer({
                       <p className="mt-0.5 text-xs text-stone-500">
                         {formatPrice(item.price)} each
                       </p>
-                      {step === 'cart' ? (
-                        <div className="mt-2 flex items-center justify-between">
-                          <div className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white p-0.5">
-                            <button
-                              type="button"
-                              className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
-                              onClick={() => onDecrement(item.dishId)}
-                              aria-label="Decrease quantity"
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <span className="min-w-7 text-center text-sm font-bold">
-                              {item.quantity}
-                            </span>
-                            <button
-                              type="button"
-                              className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
-                              onClick={() => onIncrement(item.dishId)}
-                              aria-label="Increase quantity"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white p-0.5">
                           <button
                             type="button"
-                            className="rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"
-                            onClick={() => onRemove(item.dishId)}
-                            aria-label="Remove item"
+                            className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
+                            onClick={() => onDecrement(item.dishId)}
+                            aria-label="Decrease quantity"
                           >
-                            <Trash2 size={15} />
+                            <Minus size={14} />
+                          </button>
+                          <span className="min-w-7 text-center text-sm font-bold">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            className="rounded-full p-1.5 text-stone-900 hover:bg-stone-100"
+                            onClick={() => onIncrement(item.dishId)}
+                            aria-label="Increase quantity"
+                          >
+                            <Plus size={14} />
                           </button>
                         </div>
-                      ) : (
-                        <p className="mt-2 text-sm font-semibold text-stone-900">
-                          Qty {item.quantity}
-                        </p>
-                      )}
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => onRemove(item.dishId)}
+                          aria-label="Remove item"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -386,20 +372,7 @@ export function CartDrawer({
           <div
             className={`shrink-0 space-y-2 border-t border-stone-200 bg-[#FAF8F5] px-5 pt-4 ${FOOTER_SAFE_PAD}`}
           >
-            {step === 'cart' && cart.items.length > 0 ? (
-              <>
-                <Button className="w-full" size="lg" onClick={() => setStep('review')}>
-                  {isAdding
-                    ? `Review add · ${formatPrice(cart.subtotal)}`
-                    : `Review order · ${formatPrice(displayTotal)}`}
-                </Button>
-                <Button variant="ghost" className="w-full" onClick={onClear}>
-                  Clear cart
-                </Button>
-              </>
-            ) : null}
-
-            {step === 'review' && cart.items.length > 0 ? (
+            {cart.items.length > 0 ? (
               <>
                 <Button
                   className="w-full"
@@ -412,25 +385,18 @@ export function CartDrawer({
                       ? 'Adding…'
                       : 'Placing order…'
                     : isAdding
-                      ? `Add to order #${openDisplayNo}`
-                      : 'Place Order'}
+                      ? `Add to order #${openDisplayNo} · ${formatPrice(cart.subtotal)}`
+                      : `Place order · ${formatPrice(displayTotal)}`}
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  disabled={placing}
-                  onClick={() => setStep('cart')}
-                >
-                  Back to cart
+                <Button variant="ghost" className="w-full" disabled={placing} onClick={onClear}>
+                  Clear cart
                 </Button>
               </>
-            ) : null}
-
-            {step === 'cart' && cart.items.length === 0 ? (
+            ) : (
               <Button className="w-full" variant="secondary" onClick={handleClose}>
                 Browse menu
               </Button>
-            ) : null}
+            )}
           </div>
         ) : null}
       </div>
