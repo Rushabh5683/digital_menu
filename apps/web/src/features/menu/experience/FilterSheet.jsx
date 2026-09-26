@@ -95,6 +95,7 @@ export function FilterSheet({
           ref={swipe.panelRef}
           className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
           style={swipe.panelStyle}
+          {...swipe.surfaceProps}
         >
         <SheetSwipeAffordance {...swipe.handleProps} />
         <div
@@ -114,6 +115,7 @@ export function FilterSheet({
 
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
             className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
@@ -126,7 +128,6 @@ export function FilterSheet({
         <div
           ref={swipe.scrollRef}
           className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar sm:px-5"
-          {...swipe.scrollProps}
         >
           {!hasAnyOptions ? (
             <p className="text-sm text-stone-500">

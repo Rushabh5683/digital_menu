@@ -104,6 +104,7 @@ export function ShortlistDrawer({
         ref={swipe.panelRef}
         className="relative z-10 mx-auto flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
         style={swipe.panelStyle}
+        {...swipe.surfaceProps}
       >
         <SheetSwipeAffordance {...swipe.handleProps} />
         <div
@@ -126,6 +127,7 @@ export function ShortlistDrawer({
 
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
             className="rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
