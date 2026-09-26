@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { formatNumber, formatRate } from '../lib/format.js';
 
+const LIST_TOP_LIMIT = 3;
 const FILTER_TOP_LIMIT = 3;
 
 function SearchRow({ query, count, uniqueSessions, badge = null }) {
@@ -16,10 +17,55 @@ function SearchRow({ query, count, uniqueSessions, badge = null }) {
           {formatNumber(count)} search{count === 1 ? '' : 'es'}
         </span>
         {uniqueSessions != null ? (
-          <span className="block text-xs">· {formatNumber(uniqueSessions)} session{uniqueSessions === 1 ? '' : 's'}</span>
+          <span className="block text-xs">
+            · {formatNumber(uniqueSessions)} session{uniqueSessions === 1 ? '' : 's'}
+          </span>
         ) : null}
       </span>
     </li>
+  );
+}
+
+function ExpandableList({
+  items,
+  limit = LIST_TOP_LIMIT,
+  renderItem,
+  moreLabel,
+  tone = 'teal',
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = items.slice(0, limit);
+  const rest = items.slice(limit);
+
+  if (items.length === 0) return null;
+
+  const toggleClass =
+    tone === 'amber'
+      ? 'text-amber-800 hover:underline'
+      : 'text-[var(--teal)] hover:underline';
+
+  return (
+    <>
+      <ul className="mt-3 space-y-2">
+        {visible.map((item, index) => renderItem(item, index))}
+        {expanded
+          ? rest.map((item, index) => renderItem(item, limit + index))
+          : null}
+      </ul>
+      {rest.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          className={`mt-3 inline-flex items-center gap-1.5 text-sm font-semibold ${toggleClass}`}
+        >
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {expanded
+            ? 'Show less'
+            : moreLabel?.(rest.length) ||
+              `Show ${formatNumber(rest.length)} more`}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -35,9 +81,11 @@ export function SearchDemandSection({
   const otherSearches = searchDemandReport?.otherSearches ?? [];
   const otherCount = searchDemandReport?.otherCount ?? 0;
   const topFilters = filterDemand.slice(0, FILTER_TOP_LIMIT);
+  const moreFilters = filterDemand.slice(FILTER_TOP_LIMIT);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   const hasSearchActivity = (summary?.totalSearches ?? 0) > 0;
-  const hasFilters = topFilters.length > 0;
+  const hasFilters = filterDemand.length > 0;
   const hasCuratedContent =
     topSearches.length > 0 || zeroResultSearches.length > 0 || otherCount > 0;
 
@@ -123,8 +171,12 @@ export function SearchDemandSection({
           <p className="mt-1 text-xs text-[var(--muted)]">
             Repeated terms only (2+ searches or 2+ sessions).
           </p>
-          <ul className="mt-3 space-y-2">
-            {topSearches.map((row) => (
+          <ExpandableList
+            items={topSearches}
+            moreLabel={(n) =>
+              `Show ${formatNumber(n)} more search${n === 1 ? '' : 'es'}`
+            }
+            renderItem={(row) => (
               <SearchRow
                 key={row.query}
                 query={row.query}
@@ -138,8 +190,8 @@ export function SearchDemandSection({
                   ) : null
                 }
               />
-            ))}
-          </ul>
+            )}
+          />
         </div>
       ) : null}
 
@@ -154,8 +206,13 @@ export function SearchDemandSection({
           <p className="mt-1 text-xs text-[var(--muted)]">
             Guests searched but no dishes matched — consider tags, naming, or new items.
           </p>
-          <ul className="mt-3 space-y-2">
-            {zeroResultSearches.map((row) => (
+          <ExpandableList
+            items={zeroResultSearches}
+            tone="amber"
+            moreLabel={(n) =>
+              `Show ${formatNumber(n)} more unmet term${n === 1 ? '' : 's'}`
+            }
+            renderItem={(row) => (
               <li
                 key={row.query}
                 className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-amber-50/60 px-4 py-3"
@@ -165,8 +222,8 @@ export function SearchDemandSection({
                   0 dishes matched · {formatNumber(row.zeroResultCount)}×
                 </span>
               </li>
-            ))}
-          </ul>
+            )}
+          />
         </div>
       ) : null}
 
@@ -211,7 +268,7 @@ export function SearchDemandSection({
         </p>
       ) : null}
 
-      {topFilters.length > 0 ? (
+      {hasFilters ? (
         <div
           className={
             hasCuratedContent || (summary && hasSearchActivity)
@@ -234,7 +291,32 @@ export function SearchDemandSection({
                 </span>
               </li>
             ))}
+            {showMoreFilters
+              ? moreFilters.map((row) => (
+                  <li
+                    key={row.filterId}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5"
+                  >
+                    <span className="font-medium capitalize text-[var(--ink)]">{row.filterId}</span>
+                    <span className="text-sm text-[var(--muted)]">
+                      {formatNumber(row.count)} use{row.count === 1 ? '' : 's'}
+                    </span>
+                  </li>
+                ))
+              : null}
           </ul>
+          {moreFilters.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowMoreFilters((open) => !open)}
+              className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--teal)] hover:underline"
+            >
+              {showMoreFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {showMoreFilters
+                ? 'Show less'
+                : `Show ${formatNumber(moreFilters.length)} more filter${moreFilters.length === 1 ? '' : 's'}`}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </section>
