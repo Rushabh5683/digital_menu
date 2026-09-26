@@ -671,10 +671,11 @@ export function calculateSearchDemand(events) {
  */
 export function buildSearchDemandReport(events, options = {}) {
   const {
-    topLimit = 5,
+    topLimit = 3,
     minCount = 2,
     minSessions = 2,
     otherPreviewLimit = 100,
+    zeroResultLimit = 50,
   } = options;
 
   const { terms, totalSearchEvents, searchSessions, zeroResultEvents } =
@@ -700,6 +701,7 @@ export function buildSearchDemandReport(events, options = {}) {
       (a, b) =>
         b.zeroResultCount - a.zeroResultCount || b.count - a.count || a.query.localeCompare(b.query),
     )
+    .slice(0, zeroResultLimit)
     .map((row) => ({
       query: row.query,
       count: row.count,

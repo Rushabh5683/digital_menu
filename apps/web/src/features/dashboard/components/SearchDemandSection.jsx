@@ -1,71 +1,104 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Search } from 'lucide-react';
 import { formatNumber, formatRate } from '../lib/format.js';
 
 const LIST_TOP_LIMIT = 3;
 const FILTER_TOP_LIMIT = 3;
 
-function SearchRow({ query, count, uniqueSessions, badge = null }) {
+function ZeroBadge({ label = 'Some zero results' }) {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="font-medium capitalize text-[var(--ink)]">{query}</span>
-        {badge}
-      </div>
-      <span className="shrink-0 text-right text-sm text-[var(--muted)]">
-        <span className="font-semibold text-[var(--teal)]">
-          {formatNumber(count)} search{count === 1 ? '' : 'es'}
-        </span>
-        {uniqueSessions != null ? (
-          <span className="block text-xs">
-            · {formatNumber(uniqueSessions)} session{uniqueSessions === 1 ? '' : 's'}
+    <span className="inline-flex max-w-full rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide text-amber-800">
+      {label}
+    </span>
+  );
+}
+
+/** Term on top; badge + counts stacked underneath (not a wide side badge). */
+function SearchRow({ query, count, uniqueSessions, hasZeroResults = false }) {
+  return (
+    <li className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2.5">
+      <p className="truncate text-sm font-semibold capitalize text-[var(--ink)]">{query}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-[11px] text-[var(--muted)]">
+          <span className="font-semibold text-[var(--teal)]">
+            {formatNumber(count)} search{count === 1 ? '' : 'es'}
           </span>
-        ) : null}
-      </span>
+          {uniqueSessions != null ? (
+            <span>
+              {' '}
+              · {formatNumber(uniqueSessions)} session{uniqueSessions === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </p>
+        {hasZeroResults ? <ZeroBadge /> : null}
+      </div>
     </li>
   );
 }
 
-function ExpandableList({
+function ZeroResultRow({ query, zeroResultCount }) {
+  return (
+    <li className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3.5 py-2.5">
+      <p className="truncate text-sm font-semibold capitalize text-[var(--ink)]">{query}</p>
+      <p className="mt-1 text-[11px] font-medium text-amber-800">
+        0 dishes matched · {formatNumber(zeroResultCount)}×
+      </p>
+    </li>
+  );
+}
+
+/**
+ * Always show the first `limit` items. Anything else sits in a native
+ * details/summary dropdown so the control is obvious even on mobile.
+ */
+function TopThreeWithDropdown({
   items,
   limit = LIST_TOP_LIMIT,
   renderItem,
   moreLabel,
   tone = 'teal',
 }) {
-  const [expanded, setExpanded] = useState(false);
+  if (!items.length) return null;
+
   const visible = items.slice(0, limit);
   const rest = items.slice(limit);
-
-  if (items.length === 0) return null;
-
-  const toggleClass =
+  const summaryClass =
     tone === 'amber'
-      ? 'text-amber-800 hover:underline'
-      : 'text-[var(--teal)] hover:underline';
+      ? 'text-amber-800 hover:bg-amber-50'
+      : 'text-[var(--teal)] hover:bg-[var(--teal)]/5';
+  const panelClass =
+    tone === 'amber'
+      ? 'border-amber-200/70 bg-amber-50/40'
+      : 'border-[var(--line)] bg-[var(--surface)]';
 
   return (
-    <>
-      <ul className="mt-3 space-y-2">
-        {visible.map((item, index) => renderItem(item, index))}
-        {expanded
-          ? rest.map((item, index) => renderItem(item, limit + index))
-          : null}
-      </ul>
+    <div className="mt-3 space-y-2">
+      <ul className="space-y-2">{visible.map((item, index) => renderItem(item, index))}</ul>
+
       {rest.length > 0 ? (
-        <button
-          type="button"
-          onClick={() => setExpanded((open) => !open)}
-          className={`mt-3 inline-flex items-center gap-1.5 text-sm font-semibold ${toggleClass}`}
-        >
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          {expanded
-            ? 'Show less'
-            : moreLabel?.(rest.length) ||
-              `Show ${formatNumber(rest.length)} more`}
-        </button>
+        <details className={`group overflow-hidden rounded-xl border ${panelClass}`}>
+          <summary
+            className={[
+              'flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2.5 text-sm font-semibold',
+              summaryClass,
+              '[&::-webkit-details-marker]:hidden',
+            ].join(' ')}
+          >
+            <span>
+              {moreLabel?.(rest.length) ||
+                `Show ${formatNumber(rest.length)} more`}
+            </span>
+            <ChevronDown
+              size={16}
+              className="shrink-0 transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <ul className="space-y-2 border-t border-inherit px-2.5 py-2.5">
+            {rest.map((item, index) => renderItem(item, limit + index))}
+          </ul>
+        </details>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -73,19 +106,15 @@ export function SearchDemandSection({
   searchDemandReport = null,
   filterDemand = [],
 }) {
-  const [showOther, setShowOther] = useState(false);
-
   const summary = searchDemandReport?.summary ?? null;
   const topSearches = searchDemandReport?.topSearches ?? [];
   const zeroResultSearches = searchDemandReport?.zeroResultSearches ?? [];
   const otherSearches = searchDemandReport?.otherSearches ?? [];
   const otherCount = searchDemandReport?.otherCount ?? 0;
-  const topFilters = filterDemand.slice(0, FILTER_TOP_LIMIT);
-  const moreFilters = filterDemand.slice(FILTER_TOP_LIMIT);
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const filters = filterDemand || [];
 
   const hasSearchActivity = (summary?.totalSearches ?? 0) > 0;
-  const hasFilters = filterDemand.length > 0;
+  const hasFilters = filters.length > 0;
   const hasCuratedContent =
     topSearches.length > 0 || zeroResultSearches.length > 0 || otherCount > 0;
 
@@ -169,12 +198,12 @@ export function SearchDemandSection({
             Top searches
           </p>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            Repeated terms only (2+ searches or 2+ sessions).
+            Repeated terms only (2+ searches or 2+ sessions). Showing top {LIST_TOP_LIMIT}.
           </p>
-          <ExpandableList
+          <TopThreeWithDropdown
             items={topSearches}
             moreLabel={(n) =>
-              `Show ${formatNumber(n)} more search${n === 1 ? '' : 'es'}`
+              `${formatNumber(n)} more search${n === 1 ? '' : 'es'}`
             }
             renderItem={(row) => (
               <SearchRow
@@ -182,13 +211,7 @@ export function SearchDemandSection({
                 query={row.query}
                 count={row.count}
                 uniqueSessions={row.uniqueSessions}
-                badge={
-                  row.hasZeroResults ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                      Some zero results
-                    </span>
-                  ) : null
-                }
+                hasZeroResults={Boolean(row.hasZeroResults)}
               />
             )}
           />
@@ -205,23 +228,20 @@ export function SearchDemandSection({
           </div>
           <p className="mt-1 text-xs text-[var(--muted)]">
             Guests searched but no dishes matched — consider tags, naming, or new items.
+            Showing top {LIST_TOP_LIMIT}.
           </p>
-          <ExpandableList
+          <TopThreeWithDropdown
             items={zeroResultSearches}
             tone="amber"
             moreLabel={(n) =>
-              `Show ${formatNumber(n)} more unmet term${n === 1 ? '' : 's'}`
+              `${formatNumber(n)} more unmet term${n === 1 ? '' : 's'}`
             }
             renderItem={(row) => (
-              <li
+              <ZeroResultRow
                 key={row.query}
-                className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-amber-50/60 px-4 py-3"
-              >
-                <span className="font-medium capitalize text-[var(--ink)]">{row.query}</span>
-                <span className="shrink-0 text-sm font-semibold text-amber-800">
-                  0 dishes matched · {formatNumber(row.zeroResultCount)}×
-                </span>
-              </li>
+                query={row.query}
+                zeroResultCount={row.zeroResultCount}
+              />
             )}
           />
         </div>
@@ -229,20 +249,20 @@ export function SearchDemandSection({
 
       {otherCount > 0 ? (
         <div className="mt-6 border-t border-[var(--line)] pt-4">
-          <button
-            type="button"
-            onClick={() => setShowOther((open) => !open)}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--teal)] hover:underline"
-          >
-            {showOther ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            {showOther ? 'Hide' : 'Show'} {formatNumber(otherCount)} other search
-            {otherCount === 1 ? '' : 'es'}
-            {summary?.uniqueTerms
-              ? ` (${formatNumber(summary.uniqueTerms)} unique terms total)`
-              : ''}
-          </button>
-          {showOther ? (
-            <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+          <details className="group overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2.5 text-sm font-semibold text-[var(--teal)] hover:bg-[var(--teal)]/5 [&::-webkit-details-marker]:hidden">
+              <span>
+                {formatNumber(otherCount)} other search{otherCount === 1 ? '' : 'es'}
+                {summary?.uniqueTerms
+                  ? ` · ${formatNumber(summary.uniqueTerms)} unique terms total`
+                  : ''}
+              </span>
+              <ChevronDown
+                size={16}
+                className="shrink-0 transition-transform group-open:rotate-180"
+              />
+            </summary>
+            <ul className="max-h-64 space-y-2 overflow-y-auto border-t border-[var(--line)] px-2.5 py-2.5">
               {otherSearches.map((row) => (
                 <SearchRow
                   key={row.query}
@@ -257,7 +277,7 @@ export function SearchDemandSection({
                 </li>
               ) : null}
             </ul>
-          ) : null}
+          </details>
         </div>
       ) : null}
 
@@ -279,44 +299,24 @@ export function SearchDemandSection({
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
             Filter demand
           </p>
-          <ul className="mt-3 space-y-2">
-            {topFilters.map((row) => (
+          <TopThreeWithDropdown
+            items={filters}
+            limit={FILTER_TOP_LIMIT}
+            moreLabel={(n) =>
+              `${formatNumber(n)} more filter${n === 1 ? '' : 's'}`
+            }
+            renderItem={(row) => (
               <li
                 key={row.filterId}
-                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5"
+                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2.5"
               >
-                <span className="font-medium capitalize text-[var(--ink)]">{row.filterId}</span>
-                <span className="text-sm text-[var(--muted)]">
+                <p className="text-sm font-semibold capitalize text-[var(--ink)]">{row.filterId}</p>
+                <p className="mt-1 text-[11px] text-[var(--muted)]">
                   {formatNumber(row.count)} use{row.count === 1 ? '' : 's'}
-                </span>
+                </p>
               </li>
-            ))}
-            {showMoreFilters
-              ? moreFilters.map((row) => (
-                  <li
-                    key={row.filterId}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5"
-                  >
-                    <span className="font-medium capitalize text-[var(--ink)]">{row.filterId}</span>
-                    <span className="text-sm text-[var(--muted)]">
-                      {formatNumber(row.count)} use{row.count === 1 ? '' : 's'}
-                    </span>
-                  </li>
-                ))
-              : null}
-          </ul>
-          {moreFilters.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setShowMoreFilters((open) => !open)}
-              className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--teal)] hover:underline"
-            >
-              {showMoreFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              {showMoreFilters
-                ? 'Show less'
-                : `Show ${formatNumber(moreFilters.length)} more filter${moreFilters.length === 1 ? '' : 's'}`}
-            </button>
-          ) : null}
+            )}
+          />
         </div>
       ) : null}
     </section>
