@@ -98,15 +98,26 @@ export function AdminOrderEditorPage() {
   const dishesInCategory = useMemo(() => {
     const rows = (dishesQuery.data || []).filter((dish) => dish.isAvailable !== false);
     const q = dishSearch.trim().toLowerCase();
-    return rows.filter((dish) => {
+
+    // With a query: search every category. Without: browse the selected category.
+    const matched = rows.filter((dish) => {
+      if (q) {
+        const name = String(dish.name || '').toLowerCase();
+        const category = String(dish.categoryName || '').toLowerCase();
+        return name.includes(q) || category.includes(q);
+      }
       const catId = dish.categoryId || 'uncategorized';
       if (activeCategoryId && catId !== activeCategoryId) return false;
-      if (!q) return true;
-      return String(dish.name || '')
-        .toLowerCase()
-        .includes(q);
+      return true;
     });
+
+    if (!q) return matched;
+    return matched.sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || '')),
+    );
   }, [dishesQuery.data, activeCategoryId, dishSearch]);
+
+  const isGlobalSearch = dishSearch.trim().length > 0;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['admin', 'order', orderId] });
@@ -484,10 +495,18 @@ export function AdminOrderEditorPage() {
                 <input
                   value={dishSearch}
                   onChange={(e) => setDishSearch(e.target.value)}
-                  placeholder="Search dishes in this category?"
+                  placeholder="Search all dishes…"
                   className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] py-2 pl-9 pr-3 text-sm outline-none ring-[var(--teal)] focus:ring-2"
                 />
               </label>
+              {isGlobalSearch ? (
+                <p className="mt-1.5 text-[11px] text-[var(--muted)]">
+                  Showing matches from every category
+                  {dishesInCategory.length
+                    ? ` · ${dishesInCategory.length} result${dishesInCategory.length === 1 ? '' : 's'}`
+                    : ''}
+                </p>
+              ) : null}
             </div>
             <ul className="max-h-[min(70vh,36rem)] flex-1 space-y-1 overflow-y-auto p-2 sm:p-3">
               {!canEdit ? (
@@ -496,7 +515,9 @@ export function AdminOrderEditorPage() {
                 </li>
               ) : dishesInCategory.length === 0 ? (
                 <li className="px-2 py-8 text-center text-sm text-[var(--muted)]">
-                  Select a category or adjust search
+                  {isGlobalSearch
+                    ? 'No dishes match that search'
+                    : 'Select a category or search all dishes'}
                 </li>
               ) : (
                 dishesInCategory.map((dish) => (
@@ -510,8 +531,13 @@ export function AdminOrderEditorPage() {
                       <span className="min-w-0">
                         <span className="block truncate font-semibold text-[var(--ink)]">
                           {dish.name}
-                          {addingDishId === dish.id ? '?' : ''}
+                          {addingDishId === dish.id ? '…' : ''}
                         </span>
+                        {isGlobalSearch && dish.categoryName ? (
+                          <span className="mt-0.5 block truncate text-[11px] text-[var(--muted)]">
+                            {dish.categoryName}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="shrink-0 text-sm font-bold text-[var(--teal)]">
                         {formatMoney(dish.price)}
