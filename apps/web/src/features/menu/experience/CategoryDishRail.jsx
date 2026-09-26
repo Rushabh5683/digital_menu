@@ -17,11 +17,10 @@ const DOTS_VIEWPORT_PX =
   DOT_PAD_X_PX * 2;
 
 /** Axis lock + commit thresholds for the dish slider. */
-const AXIS_LOCK_PX = 10;
-const COMMIT_RATIO = 0.18;
-const COMMIT_MIN_PX = 48;
-const FLICK_VELOCITY = 0.42; // px/ms
-const SNAP_SPRING = { type: 'spring', stiffness: 420, damping: 38, mass: 0.82 };
+const AXIS_LOCK_PX = 8;
+const COMMIT_RATIO = 0.12;
+const FLICK_VELOCITY = 0.28; // px/ms — peak velocity, not end-of-swipe
+const SNAP_SPRING = { type: 'spring', stiffness: 480, damping: 42, mass: 0.75 };
 
 function lightHaptic(ms = 10) {
   try {
@@ -321,6 +320,18 @@ export function CategoryDishRail({
     // Let native controls keep their own gesture; page scroll stays free.
     if (isInteractiveTarget(event.target)) return;
 
+    // Settle any in-flight snap so the next drag starts from a real slot.
+    // (Mid-animation swipes were the main "stuck / swipe twice" cause.)
+    if (animRef.current) {
+      stopAnim();
+      const width = widthRef.current || measureWidth() || 1;
+      const nearest = Math.round(-x.get() / width);
+      const settled = Math.max(0, Math.min(visibleDishes.length - 1, nearest));
+      activeIndexRef.current = settled;
+      setActiveIndex(settled);
+      x.set(-settled * width);
+    }
+
     gestureRef.current = {
       id: event.pointerId,
       startX: event.clientX,
@@ -328,8 +339,10 @@ export function CategoryDishRail({
       lastX: event.clientX,
       lastT: event.timeStamp || performance.now(),
       originX: x.get(),
-      mode: null, // null | 'horizontal' | 'vertical'
+      startIndex: activeIndexRef.current,
+      mode: null, // null | 'horizontal'
       velocity: 0,
+      peakVelocity: 0,
       captured: false,
       finishing: false,
     };
@@ -344,17 +357,21 @@ export function CategoryDishRail({
     const now = event.timeStamp || performance.now();
     const dt = Math.max(1, now - g.lastT);
     const frameDx = event.clientX - g.lastX;
-    // EMA so one noisy frame does not decide flick direction.
-    g.velocity = g.velocity * 0.6 + (frameDx / dt) * 0.4;
+    // EMA for smoothness; peakVelocity keeps flick intent when finger slows at lift.
+    g.velocity = g.velocity * 0.55 + (frameDx / dt) * 0.45;
+    if (Math.abs(g.velocity) > Math.abs(g.peakVelocity)) {
+      g.peakVelocity = g.velocity;
+    }
     g.lastX = event.clientX;
     g.lastT = now;
 
     if (!g.mode) {
       if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
-      if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+
+      // Prefer horizontal when tie / slight diagonal — only abandon on clear vertical.
+      if (Math.abs(dx) >= Math.abs(dy)) {
         g.mode = 'horizontal';
         suppressClickRef.current = true;
-        // Interrupt only after horizontal intent — vertical page scroll stays untouched.
         stopAnim();
         const width = measureWidth() || 1;
         const currentX = x.get();
@@ -364,17 +381,23 @@ export function CategoryDishRail({
           0,
           Math.min(visibleDishes.length - 1, baseIndex),
         );
+        g.startIndex = clampedBase;
         activeIndexRef.current = clampedBase;
         setActiveIndex(clampedBase);
+        const viewport = viewportRef.current;
+        if (viewport) viewport.style.touchAction = 'none';
         try {
           event.currentTarget.setPointerCapture?.(event.pointerId);
           g.captured = true;
         } catch {
           /* ignore */
         }
-      } else {
-        // Abandon slider — browser keeps vertical page scroll.
+      } else if (Math.abs(dy) >= AXIS_LOCK_PX * 1.5) {
+        // Clear vertical page scroll — drop slider gesture for this touch only.
         gestureRef.current = null;
+        return;
+      } else {
+        // Still ambiguous — wait for a clearer sample (don't kill the swipe).
         return;
       }
     }
@@ -401,11 +424,14 @@ export function CategoryDishRail({
 
     g.finishing = true;
     const wasHorizontal = g.mode === 'horizontal';
-    const velocity = g.velocity;
-    const originX = g.originX;
+    const velocity = g.peakVelocity || g.velocity;
+    const startIndex = g.startIndex ?? activeIndexRef.current;
     const pointerId = g.id;
     const captured = g.captured;
     gestureRef.current = null;
+
+    const viewport = viewportRef.current;
+    if (viewport) viewport.style.touchAction = '';
 
     if (captured) {
       try {
@@ -422,18 +448,27 @@ export function CategoryDishRail({
 
     const width = widthRef.current || measureWidth() || 1;
     const currentX = x.get();
-    const startIndex = activeIndexRef.current;
-    const traveled = currentX - originX; // negative = swiped left (next)
-    const commitPx = Math.max(COMMIT_MIN_PX, width * COMMIT_RATIO);
+    const projected = -currentX / width;
+    const maxIndex = Math.max(visibleDishes.length - 1, 0);
 
     let target = startIndex;
-    if (velocity <= -FLICK_VELOCITY || traveled <= -commitPx) {
+    const flickedNext = velocity <= -FLICK_VELOCITY;
+    const flickedPrev = velocity >= FLICK_VELOCITY;
+
+    if (flickedNext) {
       target = startIndex + 1;
-    } else if (velocity >= FLICK_VELOCITY || traveled >= commitPx) {
+    } else if (flickedPrev) {
       target = startIndex - 1;
+    } else {
+      // Position-based commit — drag ~12%+ toward a neighbor counts (not end velocity).
+      const delta = projected - startIndex;
+      if (delta >= COMMIT_RATIO) target = startIndex + 1;
+      else if (delta <= -COMMIT_RATIO) target = startIndex - 1;
+      else target = startIndex;
     }
 
-    const maxIndex = Math.max(visibleDishes.length - 1, 0);
+    // One page per gesture keeps paging predictable with many dishes.
+    target = Math.max(startIndex - 1, Math.min(startIndex + 1, target));
     target = Math.max(0, Math.min(maxIndex, target));
 
     snapToIndex(target, {
