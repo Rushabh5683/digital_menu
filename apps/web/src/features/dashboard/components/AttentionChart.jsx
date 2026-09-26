@@ -7,15 +7,26 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { formatSeconds } from '../lib/format.js';
+import { formatNumber, formatPercent, formatSeconds } from '../lib/format.js';
 
 function AttentionTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
+  if (!row) return null;
+
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm shadow-lg">
+    <div className="rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm shadow-lg">
       <p className="font-semibold text-[var(--ink)]">{row.name}</p>
-      <p className="text-[var(--muted)]">Avg attention: {formatSeconds(row.averageAttentionSeconds)}</p>
+      <p className="mt-1 text-[var(--muted)]">
+        Avg. attention: {formatSeconds(row.averageAttentionSeconds)}
+      </p>
+      <p className="text-[var(--muted)]">Views: {formatNumber(row.totalViews)}</p>
+      <p className="text-[var(--muted)]">
+        % of guests: {formatPercent(row.percentSessionsReaching, 0)}
+      </p>
+      <p className="text-[var(--muted)]">
+        Attention %: {formatPercent(row.attentionSharePercent, 0)}
+      </p>
     </div>
   );
 }
@@ -27,6 +38,9 @@ export function AttentionChart({ categories }) {
     .map((category) => ({
       name: category.name,
       averageAttentionSeconds: Number(category.averageAttentionSeconds) || 0,
+      totalViews: Number(category.totalViews) || 0,
+      percentSessionsReaching: Number(category.percentSessionsReaching) || 0,
+      attentionSharePercent: Number(category.attentionSharePercent) || 0,
     }));
 
   return (
@@ -39,8 +53,10 @@ export function AttentionChart({ categories }) {
           <h2 className="mt-1 text-2xl text-[var(--ink)]" style={{ fontFamily: 'var(--font-display)' }}>
             Average attention by section
           </h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Hover a bar for views, % of guests, and attention share.
+          </p>
         </div>
-        <p className="text-sm text-[var(--muted)]">Live from PostgreSQL events</p>
       </div>
 
       {data.length === 0 ? (

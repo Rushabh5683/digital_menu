@@ -17,7 +17,6 @@ import { HighAttentionLowSelection } from './components/HighAttentionLowSelectio
 import { InformationDemandSection } from './components/InformationDemandSection.jsx';
 import { OverviewCards } from './components/OverviewCards.jsx';
 import { SearchDemandSection } from './components/SearchDemandSection.jsx';
-import { SectionAttentionTable } from './components/SectionAttentionTable.jsx';
 import { useDashboardData } from './hooks/useDashboardData.js';
 import { staffMenuPreviewPath } from '../menu/lib/staffPreview.js';
 
@@ -122,13 +121,10 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
             </div>
             <AttentionChart categories={categories} />
             <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-              <SectionAttentionTable categories={categories} />
               <DishAttentionTable dishes={dishes} />
-            </div>
-            <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-              <ComparisonSection comparisonReport={overview.comparisonReport} />
               <HighAttentionLowSelection dishes={highAttentionLowSelection} />
             </div>
+            <ComparisonSection comparisonReport={overview.comparisonReport} />
             <CustomerInsights insights={insights} />
             <ConversionPanel
               funnel={overview.funnel}
