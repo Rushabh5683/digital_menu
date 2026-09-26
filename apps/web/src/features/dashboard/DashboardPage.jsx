@@ -48,7 +48,13 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
             'radial-gradient(circle at 15% 20%, rgba(201,162,39,0.22), transparent 35%), radial-gradient(circle at 90% 0%, rgba(244,246,242,0.08), transparent 40%)',
         }}
       >
-        <div className="mx-auto flex max-w-7xl min-w-0 flex-wrap items-end justify-between gap-4 px-4 py-8 sm:px-6 lg:px-8">
+        <div
+          className={
+            embedded
+              ? 'flex min-w-0 flex-wrap items-end justify-between gap-4 py-6'
+              : 'mx-auto flex max-w-[1600px] min-w-0 flex-wrap items-end justify-between gap-4 px-4 py-8 sm:px-6 lg:px-8'
+          }
+        >
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent)]">
               Guest signals
@@ -89,7 +95,13 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl min-w-0 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div
+        className={
+          embedded
+            ? 'min-w-0 space-y-6 py-6'
+            : 'mx-auto max-w-[1600px] min-w-0 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8'
+        }
+      >
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--ink)]">What needs attention</p>
