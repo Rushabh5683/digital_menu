@@ -722,14 +722,14 @@ function TableFloorTile({
             </ul>
           </button>
 
-          <div className="mt-2 flex min-w-0 flex-col gap-1.5">
-            <div className="grid min-w-0 grid-cols-2 gap-1.5">
+          <div className="mt-1.5 flex min-w-0 flex-col gap-1">
+            <div className="grid min-w-0 grid-cols-2 gap-1">
               <button
                 type="button"
                 onClick={onOpen}
-                className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--ink)] hover:bg-[var(--surface)]"
+                className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border border-[var(--line)] bg-white px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-[var(--ink)] hover:bg-[var(--surface)]"
               >
-                <Eye size={12} className="shrink-0" />
+                <Eye size={10} className="shrink-0" />
                 <span className="truncate">Open</span>
               </button>
               {canSettle ? (
@@ -737,30 +737,30 @@ function TableFloorTile({
                   type="button"
                   disabled={itemCount === 0}
                   onClick={onPreview}
-                  className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--ink)] hover:bg-[var(--surface)] disabled:opacity-60"
+                  className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border border-[var(--line)] bg-white px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-[var(--ink)] hover:bg-[var(--surface)] disabled:opacity-60"
                 >
-                  <FileText size={12} className="shrink-0" />
+                  <FileText size={10} className="shrink-0" />
                   <span className="truncate">Preview</span>
                 </button>
               ) : null}
             </div>
             {canSettle ? (
-              <div className="grid min-w-0 grid-cols-2 gap-1.5">
+              <div className="grid min-w-0 grid-cols-2 gap-1">
                 <button
                   type="button"
                   disabled={printing || itemCount === 0}
                   onClick={onPrint}
                   className={[
-                    'inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg border px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em] disabled:opacity-60',
+                    'inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] disabled:opacity-60',
                     state === 'billed'
                       ? 'border-[var(--teal)]/40 bg-[var(--teal)]/15 text-[var(--teal)] hover:bg-[var(--teal)]/25'
                       : 'border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-deep)] hover:bg-[var(--accent)]/25',
                   ].join(' ')}
                 >
                   {printing ? (
-                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
+                    <LoaderCircle size={10} className="shrink-0 animate-spin" />
                   ) : (
-                    <Printer size={12} className="shrink-0" />
+                    <Printer size={10} className="shrink-0" />
                   )}
                   <span className="truncate">Print</span>
                 </button>
@@ -768,12 +768,12 @@ function TableFloorTile({
                   type="button"
                   disabled={completing || itemCount === 0}
                   onClick={onComplete}
-                  className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1 overflow-hidden rounded-lg bg-[var(--ink)] px-1.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white hover:bg-black disabled:opacity-60"
+                  className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md bg-[var(--ink)] px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-white hover:bg-black disabled:opacity-60"
                 >
                   {completing ? (
-                    <LoaderCircle size={12} className="shrink-0 animate-spin" />
+                    <LoaderCircle size={10} className="shrink-0 animate-spin" />
                   ) : (
-                    <Check size={12} className="shrink-0" />
+                    <Check size={10} className="shrink-0" />
                   )}
                   <span className="truncate">Complete</span>
                 </button>
