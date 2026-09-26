@@ -114,17 +114,23 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
             <SearchDemandSection
               searchDemandReport={overview.searchDemandReport}
               filterDemand={overview.filterDemand}
+              restaurantId={restaurant?.id}
+              rangeParams={{
+                ...(range.from ? { from: range.from } : {}),
+                ...(range.to ? { to: range.to } : {}),
+              }}
+              onCleared={refetch}
             />
             <div className="grid min-w-0 gap-6 xl:grid-cols-2">
               <InformationDemandSection informationMetrics={overview.informationMetrics} />
               <GuestJourneySection guestJourneyReport={overview.guestJourneyReport} />
             </div>
             <AttentionChart categories={categories} />
+            <DishAttentionTable dishes={dishes} />
             <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-              <DishAttentionTable dishes={dishes} />
               <HighAttentionLowSelection dishes={highAttentionLowSelection} />
+              <ComparisonSection comparisonReport={overview.comparisonReport} />
             </div>
-            <ComparisonSection comparisonReport={overview.comparisonReport} />
             <CustomerInsights insights={insights} />
             <ConversionPanel
               funnel={overview.funnel}

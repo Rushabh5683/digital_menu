@@ -603,7 +603,7 @@ export function summarizeOrders(orderItems = [], orders = []) {
   };
 }
 
-function isZeroResultSearch(metadata = {}) {
+export function isZeroResultSearch(metadata = {}) {
   if (metadata.zeroResults === true) return true;
   const resultCount = metadata.resultCount;
   return resultCount === 0;

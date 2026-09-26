@@ -22,6 +22,7 @@ import {
   mergeDishOrderMetrics,
   summarizeOrders,
   buildGuestJourneyReport,
+  isZeroResultSearch,
 } from './analytics.metrics.js';
 
 function parseDateParam(value, label) {
@@ -481,4 +482,34 @@ export async function getAnalyticsTrends(restaurantId, query = {}) {
     },
     daily: calculateDailyTrends(events, { from: rangeFrom, to: rangeTo }),
   };
+}
+
+/**
+ * Delete SEARCH_PERFORMED events that found no dishes (unmet demand).
+ * Scoped to the restaurant and optional date range used on the dashboard.
+ */
+export async function clearZeroResultSearches(restaurantId, query = {}) {
+  const restaurant = await assertRestaurant(restaurantId);
+  const { from, to } = parseDateRange(query);
+  const events = await loadEvents(restaurant.id, from, to);
+
+  const ids = events
+    .filter(
+      (event) =>
+        event.eventType === 'SEARCH_PERFORMED' && isZeroResultSearch(event.metadata || {}),
+    )
+    .map((event) => event.id);
+
+  if (ids.length === 0) {
+    return { deleted: 0 };
+  }
+
+  const result = await prisma.analyticsEvent.deleteMany({
+    where: {
+      restaurantId: restaurant.id,
+      id: { in: ids },
+    },
+  });
+
+  return { deleted: result.count };
 }
