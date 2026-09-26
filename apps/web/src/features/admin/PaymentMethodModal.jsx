@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   CreditCard,
@@ -25,6 +26,10 @@ export const PAYMENT_METHODS = [
 
 const SINGLE_METHODS = PAYMENT_METHODS.filter((m) => m.id !== 'PART');
 
+/** 16px+ inputs avoid iOS Safari auto-zoom on focus. */
+const inputClass =
+  'mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-base outline-none ring-[var(--teal)] focus:ring-2';
+
 function money2(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
@@ -47,7 +52,6 @@ function withAutoRemaining(rows, billTotal, editedIndex = -1) {
   if (!Array.isArray(rows) || rows.length < 2) return rows;
   const next = rows.map((row) => ({ ...row }));
   const last = next.length - 1;
-  // Only auto-fill when editing an earlier line (or seeding).
   if (editedIndex === last) return next;
   const priorSum = money2(
     next.slice(0, last).reduce((sum, row) => sum + (Number(row.amount) || 0), 0),
@@ -62,6 +66,7 @@ function withAutoRemaining(rows, billTotal, editedIndex = -1) {
 
 /**
  * Settle flow: payment method (incl. part payment) → optional staff appreciation.
+ * Portaled to document.body so it always covers the viewport (not the scrollable main).
  */
 export function PaymentMethodModal({
   open,
@@ -107,6 +112,18 @@ export function PaymentMethodModal({
     setFormError('');
   }, [open, orderTotal]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    };
+  }, [open]);
+
   const splitSum = useMemo(
     () => money2(splits.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)),
     [splits],
@@ -115,7 +132,7 @@ export function PaymentMethodModal({
   const appreciationAmount = money2(appreciation);
   const captains = captainsQuery.data || [];
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const needsNote = method === 'OTHER' || method === 'UPI_OTHER';
   const isPart = method === 'PART';
@@ -217,9 +234,9 @@ export function PaymentMethodModal({
     onConfirm?.(payload);
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:p-6"
+      className="fixed inset-0 z-[280] flex items-end justify-center sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="payment-method-title"
@@ -231,14 +248,14 @@ export function PaymentMethodModal({
         onClick={busy ? undefined : onCancel}
       />
       <div className="relative z-10 flex max-h-[min(92dvh,calc(100dvh-0.5rem))] w-full min-w-0 max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] bg-white px-4 py-4 sm:px-5">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] bg-white px-4 py-3.5 sm:px-5 sm:py-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--teal)]">
               Complete order · Step {step === 'payment' ? '1' : '2'} of 2
             </p>
             <h2
               id="payment-method-title"
-              className="mt-1 break-words text-xl text-[var(--ink)]"
+              className="mt-1 break-words text-lg text-[var(--ink)] sm:text-xl"
               style={{ fontFamily: 'var(--font-display)' }}
             >
               {step === 'payment' ? 'How was payment made?' : 'Staff appreciation'}
@@ -305,7 +322,7 @@ export function PaymentMethodModal({
                   maxLength={120}
                   placeholder="e.g. Paytm / voucher"
                   disabled={busy}
-                  className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                  className={inputClass}
                 />
               </label>
             ) : null}
@@ -341,7 +358,7 @@ export function PaymentMethodModal({
                         value={row.method}
                         disabled={busy}
                         onChange={(e) => updateSplitMethod(index, e.target.value)}
-                        className="min-w-0 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                        className="min-w-0 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2.5 text-base outline-none ring-[var(--teal)] focus:ring-2"
                         aria-label={`Payment method line ${index + 1}`}
                       >
                         {SINGLE_METHODS.map((m) => (
@@ -361,7 +378,7 @@ export function PaymentMethodModal({
                         disabled={busy}
                         onChange={(e) => updateSplitAmount(index, e.target.value)}
                         className={[
-                          'rounded-xl border border-[var(--line)] px-2.5 py-2 text-sm outline-none ring-[var(--teal)] focus:ring-2',
+                          'rounded-xl border border-[var(--line)] px-2.5 py-2.5 text-base outline-none ring-[var(--teal)] focus:ring-2',
                           isLast ? 'bg-[var(--surface)] text-[var(--ink)]' : 'bg-white',
                         ].join(' ')}
                         aria-label={
@@ -435,7 +452,7 @@ export function PaymentMethodModal({
                 value={appreciation}
                 disabled={busy}
                 onChange={(e) => setAppreciation(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
+                className={inputClass}
               />
             </label>
 
@@ -497,7 +514,7 @@ export function PaymentMethodModal({
           </div>
         )}
 
-        <div className="flex shrink-0 flex-col gap-2 border-t border-[var(--line)] bg-white px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:px-5">
+        <div className="flex shrink-0 flex-col gap-2 border-t border-[var(--line)] bg-white px-4 py-3.5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:px-5 sm:py-4">
           {step === 'appreciation' ? (
             <Button
               variant="secondary"
@@ -526,6 +543,7 @@ export function PaymentMethodModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
