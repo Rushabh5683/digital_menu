@@ -635,6 +635,13 @@ export const api = {
     return request(`/api/analytics/overview/${encodeURIComponent(restaurantId)}${toQuery(params)}`);
   },
 
+  clearAnalyticsZeroResultSearches(restaurantId, params = {}) {
+    return request(
+      `/api/analytics/search-demand/zero-results/${encodeURIComponent(restaurantId)}${toQuery(params)}`,
+      { method: 'DELETE' },
+    );
+  },
+
   getAnalyticsCategories(restaurantId, params = {}) {
     return request(`/api/analytics/categories/${encodeURIComponent(restaurantId)}${toQuery(params)}`);
   },

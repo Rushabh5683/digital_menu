@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { AlertTriangle, ChevronDown, Search } from 'lucide-react';
 import { formatNumber, formatRate } from '../lib/format.js';
+import { api } from '../../../shared/api/client.js';
 
 const LIST_TOP_LIMIT = 3;
 const FILTER_TOP_LIMIT = 3;
@@ -146,7 +148,13 @@ function TopThreeWithDropdown({
 export function SearchDemandSection({
   searchDemandReport = null,
   filterDemand = [],
+  restaurantId = null,
+  rangeParams = null,
+  onCleared = null,
 }) {
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState(null);
+
   const summary = searchDemandReport?.summary ?? null;
   const topSearches = searchDemandReport?.topSearches ?? [];
   const zeroResultSearches = searchDemandReport?.zeroResultSearches ?? [];
@@ -158,6 +166,25 @@ export function SearchDemandSection({
   const hasFilters = filters.length > 0;
   const hasCuratedContent =
     topSearches.length > 0 || zeroResultSearches.length > 0 || otherCount > 0;
+
+  async function handleClearUnmet() {
+    if (!restaurantId || clearing) return;
+    const ok = window.confirm(
+      'Do you want to clear all unmet demand (zero-result) search terms? This cannot be undone.',
+    );
+    if (!ok) return;
+
+    setClearError(null);
+    setClearing(true);
+    try {
+      await api.clearAnalyticsZeroResultSearches(restaurantId, rangeParams || {});
+      onCleared?.();
+    } catch (err) {
+      setClearError(err.message || 'Could not clear unmet terms');
+    } finally {
+      setClearing(false);
+    }
+  }
 
   if (!hasSearchActivity && !hasFilters) {
     return (
@@ -278,20 +305,28 @@ export function SearchDemandSection({
           <p className="mb-3 text-[11px] text-[var(--muted)]">
             Guests searched but no dishes matched — consider tags, naming, or new items.
           </p>
-          <TopThreeWithDropdown
-            items={zeroResultSearches}
-            tone="amber"
-            moreLabel={(n) =>
-              `${formatNumber(n)} more unmet term${n === 1 ? '' : 's'}`
-            }
-            renderItem={(row) => (
+          <ul className="flex flex-wrap gap-2">
+            {zeroResultSearches.map((row) => (
               <ZeroResultRow
                 key={row.query}
                 query={row.query}
                 zeroResultCount={row.zeroResultCount}
               />
-            )}
-          />
+            ))}
+          </ul>
+          {clearError ? (
+            <p className="mt-3 text-xs font-medium text-red-600">{clearError}</p>
+          ) : null}
+          <div className="mt-4 flex justify-end border-t border-amber-200/70 pt-3">
+            <button
+              type="button"
+              disabled={!restaurantId || clearing}
+              onClick={handleClearUnmet}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-50 disabled:opacity-60"
+            >
+              {clearing ? 'Clearing…' : 'Clear'}
+            </button>
+          </div>
         </CollapsedSection>
       ) : null}
 

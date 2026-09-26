@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRestaurantAccess } from '../../middleware/auth.js';
 import { asyncHandler } from '../../utils/validate.js';
 import {
+  clearZeroResultSearches,
   getAnalyticsOverview,
   getAnalyticsTrends,
   getAttentionOrderFunnel,
@@ -34,6 +35,18 @@ analyticsRouter.get(
   asyncHandler(async (req, res) => {
     const overview = await getAnalyticsOverview(req.restaurantAccess.restaurantId, req.query);
     res.json(overview);
+  }),
+);
+
+analyticsRouter.delete(
+  '/search-demand/zero-results/:restaurantId',
+  ...protectRestaurantAnalytics,
+  asyncHandler(async (req, res) => {
+    const result = await clearZeroResultSearches(
+      req.restaurantAccess.restaurantId,
+      req.query,
+    );
+    res.json({ ok: true, ...result });
   }),
 );
 
