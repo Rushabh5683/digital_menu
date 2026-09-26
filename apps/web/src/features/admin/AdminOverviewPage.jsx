@@ -86,7 +86,7 @@ export function AdminOverviewPage() {
             {restaurant.name}
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-            Live orders, attention, and insights for your dining room — scoped to your restaurant
+            Live orders, attention, and insights for your dining room.
             only.
           </p>
         </div>

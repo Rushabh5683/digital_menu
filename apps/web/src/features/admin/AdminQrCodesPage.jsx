@@ -245,12 +245,7 @@ export function AdminQrCodesPage() {
         <Stat label="Pending" value={stats?.pending ?? 0} />
       </div>
 
-      {policy ? (
-        <div className="rounded-2xl border border-[var(--line)] bg-white/80 px-4 py-3 text-sm text-[var(--muted)]">
-          <span className="font-semibold text-[var(--ink)]">Regeneration: </span>
-          {policy}
-        </div>
-      ) : null}
+     
 
       {actionError ? <Alert tone="error">{actionError}</Alert> : null}
 

@@ -314,7 +314,7 @@ export function AdminOrderEditorPage() {
   const billed = Boolean(order.billPrintedAt);
 
   return (
-    <div className="ops-board -mx-1 flex min-h-[calc(100vh-7rem)] flex-col gap-3 pb-[max(5.5rem,calc(4.5rem+env(safe-area-inset-bottom)))] sm:-mx-0 lg:pb-0">
+    <div className="ops-board -mx-1 flex min-h-[calc(100vh-7rem)] flex-col gap-3 pb-[max(7.5rem,calc(6.5rem+env(safe-area-inset-bottom)))] sm:-mx-0 lg:pb-0">
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white/95 px-4 py-3 shadow-[0_12px_28px_-24px_rgba(15,31,28,0.4)]">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -679,76 +679,79 @@ export function AdminOrderEditorPage() {
         </section>
       </div>
 
-      {/* Mobile sticky actions */}
+      {/* Mobile sticky actions — no Preview; compact grid */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 lg:hidden">
-        <div className="pointer-events-auto border-t border-[var(--line)] bg-[var(--surface-elevated)]/95 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-28px_rgba(15,31,28,0.45)] backdrop-blur-md">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
+        <div className="pointer-events-auto border-t border-[var(--line)] bg-[var(--surface-elevated)]/95 px-3 py-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-28px_rgba(15,31,28,0.45)] backdrop-blur-md">
+          <div
+            className={[
+              'mx-auto grid max-w-6xl gap-2',
+              canEdit && canSettle ? 'grid-cols-3' : 'grid-cols-2',
+            ].join(' ')}
+          >
             <Button
+              size="sm"
               variant="secondary"
               disabled={!canEdit || saveFlash}
               onClick={handleSave}
-              className="min-w-0 flex-1 gap-1.5"
+              className="min-w-0 gap-1 whitespace-nowrap px-2"
             >
-              {saveFlash ? <Check size={16} /> : <Save size={16} />}
+              {saveFlash ? <Check size={14} /> : <Save size={14} />}
               {saveFlash ? 'Saved' : 'Save'}
             </Button>
             {canEdit ? (
               <Button
+                size="sm"
                 variant="secondary"
                 disabled={qzPrinting || items.length === 0}
                 onClick={handleKotPrint}
-                className="min-w-0 flex-1 gap-1.5"
+                className="min-w-0 gap-1 whitespace-nowrap px-2"
               >
-                {qzPrinting ? <LoaderCircle size={16} className="animate-spin" /> : <Printer size={16} />}
-                KOT & Print
+                {qzPrinting ? (
+                  <LoaderCircle size={14} className="animate-spin" />
+                ) : (
+                  <Printer size={14} />
+                )}
+                KOT
               </Button>
             ) : null}
             {canSettle ? (
-              <>
-                <Button
-                  variant="secondary"
-                  disabled={items.length === 0}
-                  onClick={handlePreview}
-                  className="min-w-0 flex-1 gap-1.5"
-                >
-                  <FileText size={16} />
-                  Preview
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={qzPrinting || printMutation.isPending || items.length === 0}
-                  onClick={handlePrint}
-                  className="min-w-0 flex-1 gap-1.5"
-                >
-                  {qzPrinting || printMutation.isPending ? (
-                    <LoaderCircle size={16} className="animate-spin" />
-                  ) : (
-                    <Printer size={16} />
-                  )}
-                  Print
-                </Button>
-              </>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={qzPrinting || printMutation.isPending || items.length === 0}
+                onClick={handlePrint}
+                className="min-w-0 gap-1 whitespace-nowrap px-2"
+              >
+                {qzPrinting || printMutation.isPending ? (
+                  <LoaderCircle size={14} className="animate-spin" />
+                ) : (
+                  <Printer size={14} />
+                )}
+                Print
+              </Button>
             ) : null}
             {canEdit && canSettle ? (
               <>
                 <Button
+                  size="sm"
                   variant="secondary"
-                  className="min-w-0 flex-1 gap-1.5 text-red-700 hover:text-red-800"
+                  className="min-w-0 gap-1 whitespace-nowrap px-2 text-red-700 hover:text-red-800"
                   disabled={cancelMutation.isPending}
                   onClick={() => {
                     setError(null);
                     setCancelOpen(true);
                   }}
                 >
-                  <XCircle size={16} />
+                  <XCircle size={14} />
                   Cancel
                 </Button>
                 <Button
-                  className="min-w-0 flex-1 gap-1.5"
+                  size="sm"
+                  className="col-span-2 min-w-0 gap-1 whitespace-nowrap"
                   disabled={items.length === 0}
                   onClick={() => setPaymentOpen(true)}
                 >
-                  <Check size={16} />
+                  <Check size={14} />
                   Complete
                 </Button>
               </>
