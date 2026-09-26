@@ -3,8 +3,13 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button } from '../../shared/ui/Button.jsx';
 
+/** 16px+ inputs avoid iOS Safari auto-zoom on focus. */
+const fieldClass =
+  'mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-base outline-none ring-[var(--teal)] focus:ring-2';
+
 /**
  * Two-step cancel: reason first, then restaurant admin password.
+ * Bottom sheet on mobile; portaled to body so it stays in the viewport.
  */
 export function CancelOrderModal({
   open,
@@ -27,7 +32,20 @@ export function CancelOrderModal({
     setLocalError(null);
   }, [open]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+      // Release iOS zoom that can stick after focusing a small input.
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    };
+  }, [open]);
+
+  if (!open || typeof document === 'undefined') return null;
 
   const displayError = localError || error;
 
@@ -50,27 +68,35 @@ export function CancelOrderModal({
     onConfirm?.({ cancelReason: reason.trim(), adminPassword: password });
   };
 
+  const close = () => {
+    if (busy) return;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    onCancel?.();
+  };
+
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[280] flex items-end justify-center sm:items-center sm:p-6">
       <button
         type="button"
         className="absolute inset-0 bg-[var(--ink)]/20 backdrop-blur-[2px]"
         aria-label="Close"
         disabled={busy}
-        onClick={() => !busy && onCancel?.()}
+        onClick={close}
       />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 w-full max-w-md rounded-3xl border border-[var(--line)] bg-[var(--surface-elevated)] p-5 shadow-[0_30px_80px_-40px_rgba(15,31,28,0.45)]"
+        className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 max-w-md flex-col overflow-hidden rounded-t-3xl border border-[var(--line)] bg-[var(--surface-elevated)] shadow-[0_30px_80px_-40px_rgba(15,31,28,0.45)] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3.5 sm:px-5">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-red-700/80">
               Cancel order
             </p>
             <h3
-              className="mt-1 text-xl text-[var(--ink)]"
+              className="mt-1 break-words text-lg text-[var(--ink)] sm:text-xl"
               style={{ fontFamily: 'var(--font-display)' }}
             >
               {orderLabel}
@@ -84,65 +110,68 @@ export function CancelOrderModal({
           <button
             type="button"
             disabled={busy}
-            onClick={() => !busy && onCancel?.()}
-            className="rounded-full p-1.5 text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+            onClick={close}
+            className="shrink-0 rounded-full p-1.5 text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
             aria-label="Close"
           >
             <X size={18} />
           </button>
         </div>
 
-        {step === 'reason' ? (
-          <label className="mt-4 block">
-            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
-              Cancel reason
-            </span>
-            <textarea
-              autoFocus
-              rows={3}
-              value={reason}
-              disabled={busy}
-              maxLength={500}
-              placeholder="e.g. Guest left, wrong table, duplicate order"
-              onChange={(e) => {
-                setReason(e.target.value);
-                if (localError) setLocalError(null);
-              }}
-              className="mt-1.5 w-full resize-none rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
-            />
-          </label>
-        ) : (
-          <label className="mt-4 block">
-            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
-              Admin password
-            </span>
-            <input
-              type="password"
-              autoFocus
-              value={password}
-              disabled={busy}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (localError) setLocalError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && password && !busy) submit();
-              }}
-              className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--teal)] focus:ring-2"
-            />
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Reason: <span className="text-[var(--ink)]">{reason.trim()}</span>
-            </p>
-          </label>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+          {step === 'reason' ? (
+            <label className="block">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
+                Cancel reason
+              </span>
+              <textarea
+                autoFocus
+                rows={3}
+                value={reason}
+                disabled={busy}
+                maxLength={500}
+                placeholder="e.g. Guest left, wrong table, duplicate order"
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  if (localError) setLocalError(null);
+                }}
+                className={`${fieldClass} resize-none`}
+              />
+            </label>
+          ) : (
+            <label className="block">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">
+                Admin password
+              </span>
+              <input
+                type="password"
+                autoFocus
+                value={password}
+                disabled={busy}
+                autoComplete="current-password"
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (localError) setLocalError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && password && !busy) submit();
+                }}
+                className={fieldClass}
+              />
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Reason: <span className="text-[var(--ink)]">{reason.trim()}</span>
+              </p>
+            </label>
+          )}
 
-        {displayError ? <p className="mt-2 text-sm text-red-600">{displayError}</p> : null}
+          {displayError ? <p className="mt-2 text-sm text-red-600">{displayError}</p> : null}
+        </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="flex shrink-0 gap-2 border-t border-[var(--line)] px-4 py-3.5 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
           {step === 'password' ? (
             <Button
               variant="secondary"
-              className="flex-1"
+              className="min-w-0 flex-1"
               disabled={busy}
               onClick={() => {
                 setStep('reason');
@@ -153,22 +182,17 @@ export function CancelOrderModal({
               Back
             </Button>
           ) : (
-            <Button
-              variant="secondary"
-              className="flex-1"
-              disabled={busy}
-              onClick={() => onCancel?.()}
-            >
+            <Button variant="secondary" className="min-w-0 flex-1" disabled={busy} onClick={close}>
               Keep order
             </Button>
           )}
           {step === 'reason' ? (
-            <Button className="flex-1" disabled={busy || !reason.trim()} onClick={goNext}>
+            <Button className="min-w-0 flex-1" disabled={busy || !reason.trim()} onClick={goNext}>
               Continue
             </Button>
           ) : (
             <Button
-              className="flex-1 !bg-red-700 hover:!bg-red-800"
+              className="min-w-0 flex-1 !bg-red-700 hover:!bg-red-800"
               disabled={busy || !password}
               onClick={submit}
             >
