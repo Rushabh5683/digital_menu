@@ -1,4 +1,5 @@
-import { Lightbulb, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, Lightbulb, Sparkles } from 'lucide-react';
 
 const severityStyles = {
   positive: 'border-emerald-400/35 bg-emerald-500/15',
@@ -13,6 +14,93 @@ const severityBadge = {
   critical: 'bg-red-400/20 text-red-200',
   info: 'bg-white/15 text-white/80',
 };
+
+function relatedLabel(insight) {
+  return [insight.relatedCategory?.name, insight.relatedDish?.name].filter(Boolean).join(' · ');
+}
+
+function InsightCard({ insight }) {
+  const [open, setOpen] = useState(false);
+  const severity = insight.severity || 'info';
+  const label = relatedLabel(insight);
+  const insightKey = insight.id || insight.type;
+  const hasAction = Boolean(insight.suggestedAction);
+
+  function expand() {
+    setOpen(true);
+  }
+
+  function toggle() {
+    setOpen((prev) => !prev);
+  }
+
+  return (
+    <article
+      className={`rounded-xl border px-4 py-4 transition ${severityStyles[severity] || severityStyles.info}`}
+    >
+      {/* Default (collapsed): Insight badge + severity + title — second image */}
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex w-full items-start gap-2 text-left"
+        aria-expanded={open}
+        aria-controls={`insight-body-${insightKey}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[var(--accent)]">
+              <Lightbulb size={16} />
+              <span className="text-xs font-semibold uppercase tracking-wide">Insight</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                severityBadge[severity] || severityBadge.info
+              }`}
+            >
+              {severity}
+            </span>
+          </div>
+          <h3
+            className="text-lg leading-snug text-white"
+            style={{ fontFamily: 'var(--font-subheading)' }}
+          >
+            {insight.title}
+          </h3>
+        </div>
+        <ChevronDown
+          size={18}
+          className={`mt-1 shrink-0 text-white/70 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {/* Expanded: description + suggested action — full card */}
+      {open ? (
+        <div id={`insight-body-${insightKey}`} className="mt-3">
+          <p className="text-sm leading-relaxed text-white/80">{insight.description}</p>
+          {hasAction ? (
+            <p className="mt-3 rounded-lg border border-white/10 bg-white px-3 py-2 text-sm text-[var(--ink)]">
+              <span className="font-semibold">Suggested action: </span>
+              {insight.suggestedAction}
+            </p>
+          ) : null}
+        </div>
+      ) : hasAction ? (
+        <button
+          type="button"
+          onClick={expand}
+          className="mt-3 inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
+        >
+          View Suggested Action
+        </button>
+      ) : null}
+
+      {/* Category / dish name — always visible (default + expanded) */}
+      {label ? (
+        <p className="mt-3 text-xs font-medium text-white/65">{label}</p>
+      ) : null}
+    </article>
+  );
+}
 
 export function CustomerInsights({ insights = [] }) {
   return (
@@ -29,7 +117,8 @@ export function CustomerInsights({ insights = [] }) {
             What customers are paying attention to
           </h2>
           <p className="mt-1 text-sm text-white/70">
-            Deterministic rules on live analytics — no external AI.
+            Deterministic rules on live analytics — no external AI. Expand a card for details and
+            suggested actions.
           </p>
         </div>
       </div>
@@ -40,51 +129,9 @@ export function CustomerInsights({ insights = [] }) {
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {insights.map((insight) => {
-            const severity = insight.severity || 'info';
-            return (
-              <article
-                key={insight.id || insight.type}
-                className={`rounded-xl border px-4 py-4 ${severityStyles[severity] || severityStyles.info}`}
-              >
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 text-[var(--accent)]">
-                    <Lightbulb size={16} />
-                    <span className="text-xs font-semibold uppercase tracking-wide">Insight</span>
-                  </span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                      severityBadge[severity] || severityBadge.info
-                    }`}
-                  >
-                    {severity}
-                  </span>
-                </div>
-                <h3
-                  className="text-lg leading-snug text-white"
-                  style={{ fontFamily: 'var(--font-subheading)' }}
-                >
-                  {insight.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/80">
-                  {insight.description}
-                </p>
-                {insight.suggestedAction ? (
-                  <p className="mt-3 rounded-lg border border-white/10 bg-white px-3 py-2 text-sm text-[var(--ink)]">
-                    <span className="font-semibold">Suggested action: </span>
-                    {insight.suggestedAction}
-                  </p>
-                ) : null}
-                {(insight.relatedCategory?.name || insight.relatedDish?.name) && (
-                  <p className="mt-2 text-xs font-medium text-white/65">
-                    {[insight.relatedCategory?.name, insight.relatedDish?.name]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                )}
-              </article>
-            );
-          })}
+          {insights.map((insight) => (
+            <InsightCard key={insight.id || insight.type} insight={insight} />
+          ))}
         </div>
       )}
     </section>
