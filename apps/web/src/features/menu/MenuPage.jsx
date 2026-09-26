@@ -965,7 +965,8 @@ export function MenuPage() {
         currency={currency}
         onClose={() => setHelpOpen(false)}
         onSelectDish={(dish) => {
-          setHelpOpen(false);
+          // Keep Help Me Choose open underneath so closing dish detail
+          // returns to the same category results.
           openDish(dish);
         }}
         onCompleted={() => {

@@ -220,12 +220,10 @@ export function HelpMeChooseModal({
                         role="button"
                         tabIndex={0}
                         onClick={() => {
-                          handleClose();
                           onSelectDish?.(dish);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
-                            handleClose();
                             onSelectDish?.(dish);
                           }
                         }}

@@ -238,7 +238,7 @@ export function DishDetailModal({
   return (
     <AnimatePresence>
       <div
-        className="guest-portal fixed inset-x-0 top-0 z-[70] flex justify-center"
+        className="guest-portal fixed inset-x-0 top-0 z-[80] flex justify-center"
         style={{ bottom: 0 }}
       >
         <div className="relative flex h-full w-full max-w-lg flex-col justify-end">
