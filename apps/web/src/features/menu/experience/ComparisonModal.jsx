@@ -156,6 +156,7 @@ export function ComparisonModal({
             ref={swipe.panelRef}
             className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
             style={swipe.panelStyle}
+            {...swipe.surfaceProps}
           >
             <SheetSwipeAffordance {...swipe.handleProps} />
             <div
@@ -177,6 +178,7 @@ export function ComparisonModal({
               </div>
               <button
                 type="button"
+                data-swipe-ignore="true"
                 onClick={onClose}
                 onPointerDown={(event) => event.stopPropagation()}
                 className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 hover:bg-stone-200/80 hover:text-stone-900"
@@ -189,7 +191,6 @@ export function ComparisonModal({
             <div
               ref={swipe.scrollRef}
               className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3.5 py-3.5 no-scrollbar"
-              {...swipe.scrollProps}
             >
               {/* Side-by-side from ~360px up; stacked on very narrow phones */}
               <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">

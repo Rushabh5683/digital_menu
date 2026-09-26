@@ -48,6 +48,12 @@ export function HelpMeChooseModal({
   useLockBodyScroll(isOpen);
   const swipe = useSheetSwipeDismiss(onClose, { enabled: isOpen });
 
+  const handleClose = useCallback(() => {
+    swipe.cancelGesture?.();
+    swipe.hardReset?.();
+    onClose?.();
+  }, [onClose, swipe.cancelGesture, swipe.hardReset]);
+
   if (!isOpen) return null;
 
   const isResults = showingResults;
@@ -97,7 +103,7 @@ export function HelpMeChooseModal({
           ref={swipe.backdropRef}
           className="absolute inset-0 cursor-default bg-stone-900/40"
           aria-label="Close Help Me Choose"
-          onClick={onClose}
+          onClick={handleClose}
           style={swipe.backdropStyle}
         />
 
@@ -105,6 +111,7 @@ export function HelpMeChooseModal({
           ref={swipe.panelRef}
           className="relative z-10 flex max-h-[min(88dvh,calc(100dvh-0.75rem))] w-full min-w-0 flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-[#FAF8F5] shadow-2xl"
           style={swipe.panelStyle}
+          {...swipe.surfaceProps}
         >
           <SheetSwipeAffordance {...swipe.handleProps} />
           <div
@@ -127,7 +134,8 @@ export function HelpMeChooseModal({
 
             <button
               type="button"
-              onClick={onClose}
+              data-swipe-ignore="true"
+              onClick={handleClose}
               onPointerDown={(event) => event.stopPropagation()}
               className="shrink-0 cursor-pointer rounded-full p-2 text-stone-500 transition-colors hover:bg-stone-200/80 hover:text-stone-900"
               aria-label="Close"
@@ -139,7 +147,6 @@ export function HelpMeChooseModal({
           <div
             ref={swipe.scrollRef}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 no-scrollbar"
-            {...swipe.scrollProps}
           >
             {!isResults && analysis.counts.total === 0 ? (
               <div className="space-y-3 py-6 text-center">
@@ -213,12 +220,12 @@ export function HelpMeChooseModal({
                         role="button"
                         tabIndex={0}
                         onClick={() => {
-                          onClose();
+                          handleClose();
                           onSelectDish?.(dish);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
-                            onClose();
+                            handleClose();
                             onSelectDish?.(dish);
                           }
                         }}
@@ -282,7 +289,7 @@ export function HelpMeChooseModal({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="min-h-10 shrink-0 cursor-pointer rounded-full bg-stone-950 px-5 py-2.5 text-xs font-medium uppercase tracking-wider text-stone-50 transition-all hover:bg-stone-800 active:scale-[0.98]"
             >
               {isResults ? 'Done' : 'Close'}

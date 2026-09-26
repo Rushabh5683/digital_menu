@@ -93,9 +93,9 @@ function hideGone(panelEl, backdropEl) {
  * Swipe-down dismiss. Icon and full-card body share ONE pipeline:
  *   activateDismiss → paintPanel follow → playExitThenClose
  *
- * Mobile browsers decide touch-action at gesture START. Changing it in
- * pointerdown is too late — so when the sheet is at scroll-top we keep the
- * same touch-action:none the icon always has, before the finger moves.
+ * Move/end are tracked on `document` after begin so pointer capture on the
+ * panel cannot orphan the gesture (that was breaking Help Me Choose / sheets
+ * that only put handlers on the handle).
  */
 export function useSheetSwipeDismiss(
   onClose,
@@ -116,10 +116,21 @@ export function useSheetSwipeDismiss(
   const closeTimerRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const gestureOwnedRef = useRef(false);
+  const docListeningRef = useRef(false);
+  const moveRef = useRef(() => {});
+  const endRef = useRef(() => {});
   const [dragging, setDragging] = useState(false);
   const [dismissing, setDismissing] = useState(false);
 
   onCloseRef.current = onClose;
+
+  const onDocPointerMove = useCallback((event) => {
+    moveRef.current(event);
+  }, []);
+
+  const onDocPointerUp = useCallback((event) => {
+    endRef.current(event);
+  }, []);
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current) {
@@ -128,10 +139,22 @@ export function useSheetSwipeDismiss(
     }
   }, []);
 
-  /**
-   * Keep the sheet in the same touch-action state as the icon whenever
-   * content is at the top — BEFORE any gesture starts.
-   */
+  const detachDocListeners = useCallback(() => {
+    if (!docListeningRef.current || typeof document === 'undefined') return;
+    docListeningRef.current = false;
+    document.removeEventListener('pointermove', onDocPointerMove);
+    document.removeEventListener('pointerup', onDocPointerUp);
+    document.removeEventListener('pointercancel', onDocPointerUp);
+  }, [onDocPointerMove, onDocPointerUp]);
+
+  const attachDocListeners = useCallback(() => {
+    if (docListeningRef.current || typeof document === 'undefined') return;
+    docListeningRef.current = true;
+    document.addEventListener('pointermove', onDocPointerMove, { passive: false });
+    document.addEventListener('pointerup', onDocPointerUp);
+    document.addEventListener('pointercancel', onDocPointerUp);
+  }, [onDocPointerMove, onDocPointerUp]);
+
   const syncTouchAction = useCallback(() => {
     const panel = panelRef.current;
     const scroller = scrollRef.current;
@@ -165,29 +188,36 @@ export function useSheetSwipeDismiss(
     syncTouchAction();
   }, [syncTouchAction]);
 
-  const lockScroll = useCallback((locked) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    if (locked) {
-      scroller.dataset.swipeLock = '1';
-      scroller.style.overflowY = 'hidden';
-      scroller.style.touchAction = 'none';
-    } else if (scroller.dataset.swipeLock === '1') {
-      delete scroller.dataset.swipeLock;
-      scroller.style.overflowY = '';
-      if (!gestureOwnedRef.current) syncTouchAction();
-    }
-  }, [syncTouchAction]);
+  const lockScroll = useCallback(
+    (locked) => {
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      if (locked) {
+        scroller.dataset.swipeLock = '1';
+        scroller.style.overflowY = 'hidden';
+        scroller.style.touchAction = 'none';
+      } else if (scroller.dataset.swipeLock === '1') {
+        delete scroller.dataset.swipeLock;
+        scroller.style.overflowY = '';
+        if (!gestureOwnedRef.current) syncTouchAction();
+      }
+    },
+    [syncTouchAction],
+  );
 
-  const resetVisualsForOpen = useCallback(() => {
-    closedRef.current = false;
-    dismissingRef.current = false;
+  const hardReset = useCallback(() => {
+    clearCloseTimer();
+    detachDocListeners();
+    sessionRef.current = null;
     finishingRef.current = false;
+    dismissingRef.current = false;
+    closedRef.current = false;
     offsetRef.current = 0;
     rawDyRef.current = 0;
     gestureOwnedRef.current = false;
-    setDismissing(false);
     setDragging(false);
+    setDismissing(false);
+    lockScroll(false);
     const panel = panelRef.current;
     const backdrop = backdropRef.current;
     if (panel) {
@@ -197,6 +227,7 @@ export function useSheetSwipeDismiss(
       panel.style.willChange = '';
       panel.style.visibility = '';
       panel.style.pointerEvents = '';
+      panel.style.touchAction = '';
     }
     if (backdrop) {
       backdrop.style.opacity = '';
@@ -204,8 +235,18 @@ export function useSheetSwipeDismiss(
       backdrop.style.visibility = '';
       backdrop.style.pointerEvents = '';
     }
+    const scroller = scrollRef.current;
+    if (scroller) {
+      delete scroller.dataset.swipeLock;
+      scroller.style.overflowY = '';
+      scroller.style.touchAction = '';
+    }
+  }, [clearCloseTimer, detachDocListeners, lockScroll]);
+
+  const resetVisualsForOpen = useCallback(() => {
+    hardReset();
     syncTouchAction();
-  }, [syncTouchAction]);
+  }, [hardReset, syncTouchAction]);
 
   const playExitThenClose = useCallback(() => {
     if (dismissingRef.current || closedRef.current) return;
@@ -214,6 +255,7 @@ export function useSheetSwipeDismiss(
     setDismissing(true);
     setDragging(false);
     sessionRef.current = null;
+    detachDocListeners();
     lockScroll(false);
     releaseGesture();
 
@@ -242,11 +284,12 @@ export function useSheetSwipeDismiss(
       hideGone(panelRef.current, backdropRef.current);
       onCloseRef.current?.();
     }, EXIT_MS + 32);
-  }, [clearCloseTimer, lockScroll, releaseGesture]);
+  }, [clearCloseTimer, detachDocListeners, lockScroll, releaseGesture]);
 
   const snapBack = useCallback(() => {
     finishingRef.current = true;
     sessionRef.current = null;
+    detachDocListeners();
     setDragging(false);
     lockScroll(false);
     releaseGesture();
@@ -272,7 +315,7 @@ export function useSheetSwipeDismiss(
       }
       syncTouchAction();
     }, SNAP_MS + 24);
-  }, [lockScroll, releaseGesture, syncTouchAction]);
+  }, [detachDocListeners, lockScroll, releaseGesture, syncTouchAction]);
 
   const endSession = useCallback(
     (shouldClose) => {
@@ -286,7 +329,6 @@ export function useSheetSwipeDismiss(
     [playExitThenClose, snapBack],
   );
 
-  /** Shared by icon + body — one activation into the follow/fade/close animation. */
   const activateDismiss = useCallback(
     (session) => {
       if (!session || session.active) return;
@@ -294,21 +336,23 @@ export function useSheetSwipeDismiss(
       setDragging(true);
       lockScroll(true);
       ownGesture();
+      attachDocListeners();
       const cap = panelRef.current || session.target;
       session.captureEl = cap;
       try {
         cap?.setPointerCapture?.(session.id);
       } catch {
-        /* ignore */
+        /* ignore — document listeners still drive the gesture */
       }
     },
-    [lockScroll, ownGesture],
+    [attachDocListeners, lockScroll, ownGesture],
   );
 
   const cancelGesture = useCallback(() => {
     if (dismissingRef.current || closedRef.current) return;
     sessionRef.current = null;
     finishingRef.current = false;
+    detachDocListeners();
     if (offsetRef.current > 0 || dragging) {
       offsetRef.current = 0;
       rawDyRef.current = 0;
@@ -318,9 +362,11 @@ export function useSheetSwipeDismiss(
       paintPanel(panelRef.current, 0, { immediate: true });
       paintBackdrop(backdropRef.current, 0, { immediate: true });
     } else {
+      setDragging(false);
+      lockScroll(false);
       releaseGesture();
     }
-  }, [dragging, lockScroll, releaseGesture]);
+  }, [detachDocListeners, dragging, lockScroll, releaseGesture]);
 
   const begin = useCallback(
     (event, { force = false } = {}) => {
@@ -337,11 +383,10 @@ export function useSheetSwipeDismiss(
       const scroller = scrollRef.current;
       const atTop = !scroller || scroller.scrollTop <= 1;
 
-      // Body dismiss only when scrolled to top (or from the handle anywhere).
       if (!fromHandle && !atTop) return;
 
-      // Match the icon: own touch-action:none for this gesture path.
       ownGesture();
+      attachDocListeners();
 
       finishingRef.current = false;
       sessionRef.current = {
@@ -359,13 +404,11 @@ export function useSheetSwipeDismiss(
       rawDyRef.current = 0;
       offsetRef.current = 0;
 
-      // Handle: activate immediately (existing working behavior).
-      // Body: activate on vertical-down lock in move() — same activateDismiss().
       if (fromHandle) {
         activateDismiss(sessionRef.current);
       }
     },
-    [enabled, activateDismiss, ownGesture],
+    [enabled, activateDismiss, attachDocListeners, ownGesture],
   );
 
   const move = useCallback(
@@ -381,7 +424,6 @@ export function useSheetSwipeDismiss(
       if (!session.active) {
         if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
 
-        // Finger up at top → content scroll (manual, since touch-action is none).
         if (dy < -8 && Math.abs(dy) > Math.abs(dx)) {
           const scroller = scrollRef.current;
           if (scroller) {
@@ -398,18 +440,18 @@ export function useSheetSwipeDismiss(
           return;
         }
 
-        // Vertical down → SAME activateDismiss as the icon.
         if (dy > 0 && Math.abs(dy) >= Math.abs(dx) * 0.85) {
           const scroller = scrollRef.current;
           if (!session.force && scroller && scroller.scrollTop > 1) {
             sessionRef.current = null;
+            detachDocListeners();
             releaseGesture();
             return;
           }
           activateDismiss(session);
         } else if (Math.abs(dx) > Math.abs(dy)) {
-          // Horizontal — abandon dismiss so dish paging can run.
           sessionRef.current = null;
+          detachDocListeners();
           releaseGesture();
           return;
         } else {
@@ -443,7 +485,7 @@ export function useSheetSwipeDismiss(
 
       if (event.cancelable) event.preventDefault();
     },
-    [activateDismiss, releaseGesture],
+    [activateDismiss, detachDocListeners, releaseGesture],
   );
 
   const end = useCallback(
@@ -453,6 +495,7 @@ export function useSheetSwipeDismiss(
 
       const session = sessionRef.current;
       if (!session) {
+        detachDocListeners();
         releaseGesture();
         return;
       }
@@ -461,6 +504,7 @@ export function useSheetSwipeDismiss(
       if (session.scrollMode) {
         sessionRef.current = null;
         finishingRef.current = false;
+        detachDocListeners();
         releaseGesture();
         return;
       }
@@ -476,6 +520,7 @@ export function useSheetSwipeDismiss(
       const pointerId = session.id;
       const cap = session.captureEl || panelRef.current || session.target;
       sessionRef.current = null;
+      detachDocListeners();
 
       try {
         cap?.releasePointerCapture?.(pointerId);
@@ -485,10 +530,23 @@ export function useSheetSwipeDismiss(
 
       endSession(shouldClose);
     },
-    [endSession, releaseGesture, threshold, velocityThreshold],
+    [detachDocListeners, endSession, releaseGesture, threshold, velocityThreshold],
   );
 
-  // Keep touch-action in sync with scroll position (must be set BEFORE gestures).
+  moveRef.current = move;
+  endRef.current = end;
+
+  // Hard-reset when the sheet closes (X / Done) so body scroll cannot stay locked.
+  const wasEnabledRef = useRef(false);
+  useEffect(() => {
+    if (enabled && !wasEnabledRef.current) {
+      resetVisualsForOpen();
+    } else if (!enabled && wasEnabledRef.current) {
+      hardReset();
+    }
+    wasEnabledRef.current = Boolean(enabled);
+  }, [enabled, hardReset, resetVisualsForOpen]);
+
   useLayoutEffect(() => {
     if (!enabled) return undefined;
     const scroller = scrollRef.current;
@@ -498,12 +556,6 @@ export function useSheetSwipeDismiss(
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
   }, [enabled, syncTouchAction, dismissing]);
-
-  const wasEnabledRef = useRef(false);
-  useEffect(() => {
-    if (enabled && !wasEnabledRef.current) resetVisualsForOpen();
-    wasEnabledRef.current = Boolean(enabled);
-  }, [enabled, resetVisualsForOpen]);
 
   useEffect(() => {
     if (!dragging) return undefined;
@@ -525,39 +577,20 @@ export function useSheetSwipeDismiss(
 
   useEffect(
     () => () => {
-      clearCloseTimer();
-      lockScroll(false);
-      gestureOwnedRef.current = false;
+      hardReset();
     },
-    [clearCloseTimer, lockScroll],
+    [hardReset],
   );
 
-  // Icon entry — force-activate; same move/end/playExitThenClose as the body.
   const handleProps = {
     onPointerDown: (event) => {
       event.stopPropagation();
       begin(event, { force: true });
     },
-    onPointerMove: move,
-    onPointerUp: end,
-    onPointerCancel: end,
-    onLostPointerCapture: (event) => {
-      if (!sessionRef.current || finishingRef.current || dismissingRef.current) return;
-      end(event);
-    },
   };
 
-  // Full-card entry via capture so one listener covers the whole sheet
-  // (including scroll children) without depending on bubble from nested nodes.
   const surfaceProps = {
     onPointerDownCapture: (event) => begin(event, { force: false }),
-    onPointerMoveCapture: move,
-    onPointerUpCapture: end,
-    onPointerCancelCapture: end,
-    onLostPointerCapture: (event) => {
-      if (!sessionRef.current || finishingRef.current || dismissingRef.current) return;
-      end(event);
-    },
   };
 
   const active = dragging || dismissing || offsetRef.current > 0;
@@ -593,5 +626,6 @@ export function useSheetSwipeDismiss(
     surfaceProps,
     cancelGesture,
     syncTouchAction,
+    hardReset,
   };
 }
