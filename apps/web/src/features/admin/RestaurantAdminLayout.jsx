@@ -83,6 +83,69 @@ const childLinkClass = ({ isActive }) =>
       : 'text-white/55 hover:bg-white/[0.06] hover:text-white',
   ].join(' ');
 
+function formatAdminClock(date) {
+  const day = date.toLocaleDateString(undefined, { weekday: 'long' });
+  const shortDay = date.toLocaleDateString(undefined, { weekday: 'short' });
+  const calendar = date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const shortDate = date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
+  const time = date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return { day, shortDay, calendar, shortDate, time };
+}
+
+/** Live day, date, and 12-hour time (hours + minutes) for the admin header. */
+function AdminHeaderClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    // Minute precision — no seconds on the clock.
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const { day, shortDay, calendar, shortDate, time } = formatAdminClock(now);
+
+  return (
+    <div
+      className="min-w-0 shrink text-right leading-tight"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {/* Mobile: one compact line */}
+      <p className="whitespace-nowrap text-[10px] font-semibold text-[var(--ink)] sm:hidden">
+        <span className="uppercase tracking-[0.08em] text-[var(--muted)]">{shortDay}</span>
+        <span className="mx-1 text-[var(--muted)]">·</span>
+        <span>{shortDate}</span>
+        <span className="mx-1 text-[var(--muted)]">·</span>
+        <span className="tabular-nums">{time}</span>
+      </p>
+      {/* sm+: day on its own row */}
+      <div className="hidden sm:block">
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+          {day}
+        </span>
+        <span className="block text-xs font-semibold text-[var(--ink)]">
+          {calendar}
+          <span className="mx-1.5 text-[var(--muted)]">·</span>
+          <span className="tabular-nums">{time}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function readCollapsedPref() {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
@@ -420,11 +483,11 @@ export function RestaurantAdminLayout() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* Fixed on mobile so the hamburger stays above modals (add dish, etc.). */}
         <header className="fixed inset-x-0 top-0 z-[250] shrink-0 border-b border-[var(--line)] bg-[var(--surface-elevated)]/95 backdrop-blur-md lg:static lg:z-30">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3 lg:px-8">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
               <button
                 type="button"
-                className="rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:hidden"
+                className="shrink-0 rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open navigation"
               >
@@ -432,38 +495,40 @@ export function RestaurantAdminLayout() {
               </button>
               <button
                 type="button"
-                className="hidden rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:inline-flex"
+                className="hidden shrink-0 rounded-xl border border-[var(--line)] bg-white p-2.5 text-[var(--ink)] shadow-sm lg:inline-flex"
                 onClick={toggleCollapsed}
                 aria-label={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
                 title={collapsedPref ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {collapsedPref ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
               </button>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)] sm:text-xs sm:tracking-[0.18em]">
                   {restaurant?.name || 'Restaurant'}
                 </p>
-                <p className="text-sm font-semibold text-[var(--ink)]">
+                <p className="hidden truncate text-sm font-semibold text-[var(--ink)] sm:block">
                   {isCaptain ? 'Floor orders' : 'Operations & Intelligence'}
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+              <AdminHeaderClock />
               {slug && !isCaptain ? (
                 <Link
                   to={staffMenuPreviewPath(slug)}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-black/[0.02]"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-2 py-1.5 text-[10px] font-semibold text-[var(--ink)] hover:bg-black/[0.02] sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
                 >
-                  Customer menu
-                  <ExternalLink size={12} />
+                  <span className="sm:hidden">Menu</span>
+                  <span className="hidden sm:inline">Customer menu</span>
+                  <ExternalLink size={12} className="shrink-0" />
                 </Link>
               ) : null}
             </div>
           </div>
         </header>
-        <div className="h-[57px] shrink-0 lg:hidden" aria-hidden />
+        <div className="h-14 shrink-0 lg:hidden" aria-hidden />
 
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8 lg:py-8 [-webkit-overflow-scrolling:touch]">
           <Outlet context={{ restaurant }} />
