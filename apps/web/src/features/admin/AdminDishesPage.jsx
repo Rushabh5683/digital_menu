@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, ImagePlus, Plus, Utensils } from 'lucide-react';
+import { GripVertical, ImagePlus, Plus, Search, Utensils } from 'lucide-react';
 import { api } from '../../shared/api/client.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
@@ -35,6 +35,7 @@ export function AdminDishesPage() {
   const [formError, setFormError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [dragId, setDragId] = useState(null);
+  const [dishSearch, setDishSearch] = useState('');
 
   const menusQuery = useQuery({
     queryKey: ['admin', 'menus'],
@@ -72,7 +73,29 @@ export function AdminDishesPage() {
     enabled: Boolean(selectedCategoryId),
   });
 
-  const dishes = dishesQuery.data || [];
+  const allMenuDishesQuery = useQuery({
+    queryKey: ['admin', 'dishes', 'menu', selectedMenuId],
+    queryFn: async () =>
+      (await api.listAdminDishes({ menuId: selectedMenuId })).dishes,
+    enabled: Boolean(selectedMenuId),
+  });
+
+  const searchQuery = dishSearch.trim().toLowerCase();
+  const isGlobalSearch = searchQuery.length > 0;
+
+  const dishes = useMemo(() => {
+    if (isGlobalSearch) {
+      return (allMenuDishesQuery.data || [])
+        .filter((dish) => String(dish.name || '').toLowerCase().includes(searchQuery))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    }
+    return dishesQuery.data || [];
+  }, [isGlobalSearch, searchQuery, allMenuDishesQuery.data, dishesQuery.data]);
+
+  const dishesLoading = isGlobalSearch
+    ? allMenuDishesQuery.isLoading
+    : dishesQuery.isLoading;
+  const dishesError = isGlobalSearch ? allMenuDishesQuery.error : dishesQuery.error;
 
   useEffect(() => {
     if (!selectedMenuId) return;
@@ -103,21 +126,32 @@ export function AdminDishesPage() {
   const availabilityMutation = useMutation({
     mutationFn: ({ id, isAvailable }) => api.updateAdminDish(id, { isAvailable }),
     onMutate: async ({ id, isAvailable }) => {
-      await queryClient.cancelQueries({ queryKey: ['admin', 'dishes', selectedCategoryId] });
-      const previous = queryClient.getQueryData(['admin', 'dishes', selectedCategoryId]);
-      queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], (list = []) =>
-        list.map((dish) => (dish.id === id ? { ...dish, isAvailable } : dish)),
-      );
-      return { previous };
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['admin', 'dishes', selectedCategoryId] }),
+        queryClient.cancelQueries({ queryKey: ['admin', 'dishes', 'menu', selectedMenuId] }),
+      ]);
+      const previousCategory = queryClient.getQueryData(['admin', 'dishes', selectedCategoryId]);
+      const previousMenu = queryClient.getQueryData(['admin', 'dishes', 'menu', selectedMenuId]);
+      const patch = (list = []) =>
+        list.map((dish) => (dish.id === id ? { ...dish, isAvailable } : dish));
+      queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], patch);
+      queryClient.setQueryData(['admin', 'dishes', 'menu', selectedMenuId], patch);
+      return { previousCategory, previousMenu };
     },
     onError: (error, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], context.previous);
+      if (context?.previousCategory) {
+        queryClient.setQueryData(['admin', 'dishes', selectedCategoryId], context.previousCategory);
+      }
+      if (context?.previousMenu) {
+        queryClient.setQueryData(['admin', 'dishes', 'menu', selectedMenuId], context.previousMenu);
       }
       setActionError(error.message);
     },
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'dishes'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'menus'] }),
+      ]);
     },
   });
 
@@ -163,8 +197,9 @@ export function AdminDishesPage() {
   });
 
   function onDrop(targetId) {
-    if (!dragId || dragId === targetId || !selectedCategoryId) return;
-    const ids = dishes.map((dish) => dish.id);
+    if (isGlobalSearch || !dragId || dragId === targetId || !selectedCategoryId) return;
+    const categoryDishes = dishesQuery.data || [];
+    const ids = categoryDishes.map((dish) => dish.id);
     const from = ids.indexOf(dragId);
     const to = ids.indexOf(targetId);
     if (from < 0 || to < 0) return;
@@ -212,14 +247,31 @@ export function AdminDishesPage() {
         </Button>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+        <Field label="Search dishes" htmlFor="dish-search">
+          <div className="relative">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+            />
+            <Input
+              id="dish-search"
+              value={dishSearch}
+              onChange={(event) => setDishSearch(event.target.value)}
+              placeholder="Search by name across all categories…"
+              className="!pl-9"
+              disabled={!selectedMenuId}
+            />
+          </div>
+        </Field>
         <Field label="Menu" htmlFor="dish-menu">
           <Select
             id="dish-menu"
             value={selectedMenuId}
-            onChange={(event) =>
-              setSearchParams({ menuId: event.target.value }, { replace: true })
-            }
+            onChange={(event) => {
+              setDishSearch('');
+              setSearchParams({ menuId: event.target.value }, { replace: true });
+            }}
             disabled={menus.length === 0}
           >
             {menus.length === 0 ? <option value="">No menus</option> : null}
@@ -244,12 +296,15 @@ export function AdminDishesPage() {
             disabled={categories.length === 0}
           >
             {categories.length === 0 ? <option value="">No categories</option> : null}
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-                {!category.isEnabled ? ' (disabled)' : ''}
-              </option>
-            ))}
+            {categories.map((category) => {
+              const count = Array.isArray(category.dishes) ? category.dishes.length : 0;
+              return (
+                <option key={category.id} value={category.id}>
+                  {category.name} ({count})
+                  {!category.isEnabled ? ' — disabled' : ''}
+                </option>
+              );
+            })}
           </Select>
         </Field>
         <Link
@@ -263,11 +318,11 @@ export function AdminDishesPage() {
       {actionError ? <Alert tone="error">{actionError}</Alert> : null}
 
       <section className="rounded-2xl border border-[var(--line)] bg-white/85 p-5 shadow-[0_18px_40px_-28px_rgba(15,31,28,0.35)] sm:p-6">
-        {menusQuery.isLoading || menuQuery.isLoading || dishesQuery.isLoading ? (
+        {menusQuery.isLoading || menuQuery.isLoading || dishesLoading ? (
           <p className="py-10 text-center text-sm text-[var(--muted)]">Loading dishes…</p>
         ) : null}
 
-        {dishesQuery.error ? <Alert tone="error">{dishesQuery.error.message}</Alert> : null}
+        {dishesError ? <Alert tone="error">{dishesError.message}</Alert> : null}
 
         {!menusQuery.isLoading && menus.length === 0 ? (
           <EmptyDishes
@@ -287,8 +342,27 @@ export function AdminDishesPage() {
           />
         ) : null}
 
-        {selectedCategoryId && !dishesQuery.isLoading && !dishesQuery.error && dishes.length === 0 ? (
+        {selectedCategoryId &&
+        !dishesLoading &&
+        !dishesError &&
+        dishes.length === 0 &&
+        !isGlobalSearch ? (
           <EmptyDishes title="No dishes yet" text="Add your first plate to this category." action={openCreate} label="Add dish" />
+        ) : null}
+
+        {isGlobalSearch && !dishesLoading && !dishesError && dishes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white/70 px-6 py-14 text-center">
+            <p className="font-semibold text-[var(--ink)]">No dishes match “{dishSearch.trim()}”</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--muted)]">
+              Try another name, or clear the search to browse by category.
+            </p>
+          </div>
+        ) : null}
+
+        {isGlobalSearch && dishes.length > 0 ? (
+          <p className="mb-3 text-xs text-[var(--muted)]">
+            Showing {dishes.length} match{dishes.length === 1 ? '' : 'es'} across all categories
+          </p>
         ) : null}
 
         {dishes.length > 0 ? (
@@ -296,9 +370,13 @@ export function AdminDishesPage() {
             {dishes.map((dish) => (
               <li
                 key={dish.id}
-                draggable
-                onDragStart={() => setDragId(dish.id)}
-                onDragOver={(event) => event.preventDefault()}
+                draggable={!isGlobalSearch}
+                onDragStart={() => {
+                  if (!isGlobalSearch) setDragId(dish.id);
+                }}
+                onDragOver={(event) => {
+                  if (!isGlobalSearch) event.preventDefault();
+                }}
                 onDrop={() => onDrop(dish.id)}
                 onDragEnd={() => setDragId(null)}
                 className={[
@@ -307,13 +385,15 @@ export function AdminDishesPage() {
                   !dish.isAvailable ? 'opacity-75' : '',
                 ].join(' ')}
               >
-                <button
-                  type="button"
-                  className="hidden cursor-grab touch-none rounded-lg p-1 text-[var(--muted)] hover:bg-black/[0.04] sm:block"
-                  aria-label="Drag to reorder"
-                >
-                  <GripVertical size={18} />
-                </button>
+                {!isGlobalSearch ? (
+                  <button
+                    type="button"
+                    className="hidden cursor-grab touch-none rounded-lg p-1 text-[var(--muted)] hover:bg-black/[0.04] sm:block"
+                    aria-label="Drag to reorder"
+                  >
+                    <GripVertical size={18} />
+                  </button>
+                ) : null}
                 <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-black/[0.03]">
                   {dish.imageUrl ? (
                     <img
@@ -343,6 +423,11 @@ export function AdminDishesPage() {
                     >
                       {dish.isAvailable ? 'Available' : 'Unavailable'}
                     </span>
+                    {isGlobalSearch && dish.categoryName ? (
+                      <span className="rounded-full border border-[var(--line)] bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                        {dish.categoryName}
+                      </span>
+                    ) : null}
                   </div>
                   {dish.description && dish.description !== '—' ? (
                     <p className="mt-1 line-clamp-2 text-sm text-[var(--muted)]">{dish.description}</p>

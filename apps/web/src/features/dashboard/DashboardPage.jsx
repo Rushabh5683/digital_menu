@@ -51,7 +51,7 @@ export function DashboardPage({ restaurantSlugOverride, embedded = false } = {})
         <div
           className={
             embedded
-              ? 'flex min-w-0 flex-wrap items-end justify-between gap-4 py-6'
+              ? 'flex min-w-0 flex-wrap items-end justify-between gap-4 px-4 py-6 sm:px-5'
               : 'mx-auto flex max-w-[1600px] min-w-0 flex-wrap items-end justify-between gap-4 px-4 py-8 sm:px-6 lg:px-8'
           }
         >
