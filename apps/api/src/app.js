@@ -1,9 +1,9 @@
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
 import { env } from './config.js';
-import fs from "fs";
-import * as archiver from "archiver";
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
@@ -16,59 +16,97 @@ import { restaurantRouter } from './modules/restaurant/restaurant.routes.js';
 import { sessionRouter } from './modules/session/session.routes.js';
 import { superAdminRouter } from './modules/super/super.routes.js';
 
+const require = createRequire(import.meta.url);
+const archiver = require('archiver');
+
 export function createApp() {
   const app = express();
 
- app.get("/download-uploads-backup", (req, res) => {
-  const token = req.headers.authorization;
-  const expectedToken = process.env.UPLOADS_EXPORT_TOKEN;
-  const uploadsDir = UPLOADS_ROOT;
+  // TEMPORARY: Download a ZIP backup of uploaded files.
+  app.get('/download-uploads-backup', (req, res) => {
+    const token = req.headers.authorization;
+    const expectedToken = process.env.UPLOADS_EXPORT_TOKEN;
+    const uploadsDir = UPLOADS_ROOT;
 
-  if (!expectedToken || token !== `Bearer ${expectedToken}`) {
-    return res.status(401).send("Unauthorized");
-  }
-
-  if (!fs.existsSync(uploadsDir)) {
-    return res.status(404).send("Uploads directory not found");
-  }
-
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader(
-    "Content-Disposition",
-    'attachment; filename="railway-uploads-backup.zip"'
-  );
-
-  const archive = archiver("zip", {
-    zlib: { level: 1 },
-  });
-
-  archive.on("error", (err) => {
-    console.error("Uploads backup failed:", err);
-
-    if (!res.headersSent) {
-      res.status(500).end("Backup failed");
-    } else {
-      res.destroy(err);
+    if (!expectedToken || token !== `Bearer ${expectedToken}`) {
+      return res.status(401).send('Unauthorized');
     }
-  });
 
-  archive.pipe(res);
-  archive.directory(uploadsDir, false);
-  archive.finalize();
-});
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        return res.status(404).send('Uploads directory not found');
+      }
+
+      if (!fs.statSync(uploadsDir).isDirectory()) {
+        return res.status(500).send('Uploads path is not a directory');
+      }
+    } catch (err) {
+      console.error('Could not access uploads directory:', err);
+      return res.status(500).send('Could not access uploads directory');
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="railway-uploads-backup.zip"'
+    );
+    res.setHeader('Cache-Control', 'no-store');
+
+    const archive = archiver('zip', {
+      zlib: { level: 1 },
+    });
+
+    archive.on('warning', (err) => {
+      console.warn('Uploads backup warning:', err);
+    });
+
+    archive.on('error', (err) => {
+      console.error('Uploads backup failed:', err);
+
+      if (!res.headersSent) {
+        res.status(500).end('Backup failed');
+      } else {
+        res.destroy(err);
+      }
+    });
+
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        archive.abort();
+      }
+    });
+
+    archive.pipe(res);
+    archive.directory(uploadsDir, false);
+    archive.finalize().catch((err) => {
+      console.error('Could not finalize uploads archive:', err);
+
+      if (!res.headersSent) {
+        res.status(500).end('Backup failed');
+      } else {
+        res.destroy(err);
+      }
+    });
+  });
 
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || env.corsOrigins.includes(origin) || origin === env.corsOrigin) {
+        if (
+          !origin ||
+          env.corsOrigins.includes(origin) ||
+          origin === env.corsOrigin
+        ) {
           callback(null, true);
           return;
         }
+
         callback(null, false);
       },
       credentials: true,
-    }),
+    })
   );
+
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
