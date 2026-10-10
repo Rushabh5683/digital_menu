@@ -1,3 +1,4 @@
+
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
@@ -17,7 +18,15 @@ import { sessionRouter } from './modules/session/session.routes.js';
 import { superAdminRouter } from './modules/super/super.routes.js';
 
 const require = createRequire(import.meta.url);
-const archiver = require('archiver');
+const archiverModule = require('archiver');
+const archiver =
+  typeof archiverModule === 'function'
+    ? archiverModule
+    : typeof archiverModule.default === 'function'
+      ? archiverModule.default
+      : typeof archiverModule.default?.default === 'function'
+        ? archiverModule.default.default
+        : null;
 
 export function createApp() {
   const app = express();
@@ -30,6 +39,11 @@ export function createApp() {
 
     if (!expectedToken || token !== `Bearer ${expectedToken}`) {
       return res.status(401).send('Unauthorized');
+    }
+
+    if (!archiver) {
+      console.error('Archiver module does not expose a callable function.');
+      return res.status(500).send('ZIP library configuration error');
     }
 
     try {
@@ -52,9 +66,14 @@ export function createApp() {
     );
     res.setHeader('Cache-Control', 'no-store');
 
-    const archive = archiver('zip', {
-      zlib: { level: 1 },
-    });
+    let archive;
+
+    try {
+      archive = archiver('zip', { zlib: { level: 1 } });
+    } catch (err) {
+      console.error('Could not initialize ZIP archive:', err);
+      return res.status(500).send('Could not create ZIP archive');
+    }
 
     archive.on('warning', (err) => {
       console.warn('Uploads backup warning:', err);
@@ -62,10 +81,7 @@ export function createApp() {
 
     archive.on('error', (err) => {
       console.error('Uploads backup failed:', err);
-
-      if (!res.headersSent) {
-        res.status(500).end('Backup failed');
-      } else {
+      if (!res.destroyed) {
         res.destroy(err);
       }
     });
@@ -80,10 +96,7 @@ export function createApp() {
     archive.directory(uploadsDir, false);
     archive.finalize().catch((err) => {
       console.error('Could not finalize uploads archive:', err);
-
-      if (!res.headersSent) {
-        res.status(500).end('Backup failed');
-      } else {
+      if (!res.destroyed) {
         res.destroy(err);
       }
     });
