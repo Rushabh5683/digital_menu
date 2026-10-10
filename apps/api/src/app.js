@@ -3,7 +3,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import { env } from './config.js';
 import fs from "fs";
-import archiver from "archiver";
+import * as archiver from "archiver";
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
