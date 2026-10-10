@@ -2,6 +2,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import { env } from './config.js';
+import fs from "fs";
+import archiver from "archiver";
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
@@ -16,6 +18,44 @@ import { superAdminRouter } from './modules/super/super.routes.js';
 
 export function createApp() {
   const app = express();
+
+ app.get("/download-uploads-backup", (req, res) => {
+  const token = req.headers.authorization;
+  const expectedToken = process.env.UPLOADS_EXPORT_TOKEN;
+  const uploadsDir = UPLOADS_ROOT;
+
+  if (!expectedToken || token !== `Bearer ${expectedToken}`) {
+    return res.status(401).send("Unauthorized");
+  }
+
+  if (!fs.existsSync(uploadsDir)) {
+    return res.status(404).send("Uploads directory not found");
+  }
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="railway-uploads-backup.zip"'
+  );
+
+  const archive = archiver("zip", {
+    zlib: { level: 1 },
+  });
+
+  archive.on("error", (err) => {
+    console.error("Uploads backup failed:", err);
+
+    if (!res.headersSent) {
+      res.status(500).end("Backup failed");
+    } else {
+      res.destroy(err);
+    }
+  });
+
+  archive.pipe(res);
+  archive.directory(uploadsDir, false);
+  archive.finalize();
+});
 
   app.use(
     cors({
