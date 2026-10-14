@@ -620,7 +620,7 @@ adminRouter.get(
   '/tables/:tableId/qr',
   ...adminOnly,
   asyncHandler(async (req, res) => {
-    const result = await getAdminTableQr(req.restaurantId, req.params.tableId);
+    const result = await getAdminTableQr(req.restaurantId, req.params.tableId, req.get('origin'));
     res.json(result);
   }),
 );
@@ -629,7 +629,7 @@ adminRouter.get(
   '/qr-codes',
   ...adminOnly,
   asyncHandler(async (req, res) => {
-    const result = await listAdminQrCodes(req.restaurantId);
+    const result = await listAdminQrCodes(req.restaurantId, req.get('origin'));
     res.json(result);
   }),
 );
@@ -638,7 +638,7 @@ adminRouter.post(
   '/qr-codes/generate-all',
   ...adminOnly,
   asyncHandler(async (req, res) => {
-    const result = await generateAllAdminTableQrs(req.restaurantId);
+    const result = await generateAllAdminTableQrs(req.restaurantId, req.get('origin'));
     res.json(result);
   }),
 );
@@ -647,7 +647,7 @@ adminRouter.post(
   '/qr-codes/:tableId/generate',
   ...adminOnly,
   asyncHandler(async (req, res) => {
-    const result = await generateAdminTableQr(req.restaurantId, req.params.tableId);
+    const result = await generateAdminTableQr(req.restaurantId, req.params.tableId, req.get('origin'));
     res.json(result);
   }),
 );
