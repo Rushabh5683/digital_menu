@@ -88,9 +88,11 @@ test('table QR codes are restaurant-scoped and bind sessions', async (t) => {
   await t.test('generate QR encodes own restaurant slug and table number only', async () => {
     const qr = await api.post(`/api/admin/qr-codes/${tableA.id}/generate`, {
       cookie,
+      headers: { Origin: 'https://menu.example' },
       body: {},
     });
     assert.equal(qr.status, 200);
+    assert.match(qr.body.menuUrl, /^https:\/\/menu\.example\/menu\//);
     assert.match(qr.body.menuUrl, new RegExp(`/menu/${restaurantA.slug}\\?table=12`));
     assert.doesNotMatch(qr.body.menuUrl, /tableId=/);
     assert.ok(qr.body.dataUrl.startsWith('data:image/png;base64,'));

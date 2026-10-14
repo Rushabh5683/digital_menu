@@ -78,8 +78,8 @@ export async function generateQrDataUrl(menuUrl) {
   });
 }
 
-function serializeQrRow(table, restaurant) {
-  const menuUrl = buildTableMenuUrl(restaurant.slug, table.tableNumber);
+function serializeQrRow(table, restaurant, requestOrigin) {
+  const menuUrl = buildTableMenuUrl(restaurant.slug, table.tableNumber, requestOrigin);
   const generated = Boolean(table.qrGeneratedAt);
   return {
     ...serializeDiningTable(table, { restaurantSlug: restaurant.slug }),
@@ -90,7 +90,7 @@ function serializeQrRow(table, restaurant) {
   };
 }
 
-export async function listAdminQrCodes(restaurantId) {
+export async function listAdminQrCodes(restaurantId, requestOrigin) {
   const restaurant = await getRestaurant(restaurantId);
   const tables = await prisma.diningTable.findMany({
     where: { restaurantId },
@@ -101,7 +101,7 @@ export async function listAdminQrCodes(restaurantId) {
     restaurant: restaurantPublic(restaurant),
     regenerationPolicy:
       'QR links use /menu/{slug}?table={number}. Regenerating updates the image timestamp only; existing printed codes remain valid.',
-    tables: tables.map((table) => serializeQrRow(table, restaurant)),
+    tables: tables.map((table) => serializeQrRow(table, restaurant, requestOrigin)),
     stats: {
       total: tables.length,
       ready: tables.filter((table) => table.qrGeneratedAt && table.isActive).length,
@@ -111,10 +111,10 @@ export async function listAdminQrCodes(restaurantId) {
   };
 }
 
-export async function generateAdminTableQr(restaurantId, tableId) {
+export async function generateAdminTableQr(restaurantId, tableId, requestOrigin) {
   const restaurant = await getRestaurant(restaurantId);
   const existing = await getTableOwned(tableId, restaurantId);
-  const menuUrl = buildTableMenuUrl(restaurant.slug, existing.tableNumber);
+  const menuUrl = buildTableMenuUrl(restaurant.slug, existing.tableNumber, requestOrigin);
 
   // Ownership guard: menu URL slug must match this restaurant only.
   if (!menuUrl.includes(`/menu/${encodeURIComponent(restaurant.slug)}?`)) {
@@ -129,7 +129,7 @@ export async function generateAdminTableQr(restaurantId, tableId) {
 
   return {
     restaurant: restaurantPublic(restaurant),
-    table: serializeQrRow(table, restaurant),
+    table: serializeQrRow(table, restaurant, requestOrigin),
     menuUrl,
     dataUrl,
     filename: serializeQrRow(table, restaurant).filename,
@@ -137,7 +137,7 @@ export async function generateAdminTableQr(restaurantId, tableId) {
   };
 }
 
-export async function generateAllAdminTableQrs(restaurantId) {
+export async function generateAllAdminTableQrs(restaurantId, requestOrigin) {
   const restaurant = await getRestaurant(restaurantId);
   const tables = await prisma.diningTable.findMany({
     where: { restaurantId, isActive: true },
@@ -152,14 +152,14 @@ export async function generateAllAdminTableQrs(restaurantId) {
   const items = [];
 
   for (const table of tables) {
-    const menuUrl = buildTableMenuUrl(restaurant.slug, table.tableNumber);
+    const menuUrl = buildTableMenuUrl(restaurant.slug, table.tableNumber, requestOrigin);
     const dataUrl = await generateQrDataUrl(menuUrl);
     const updated = await prisma.diningTable.update({
       where: { id: table.id },
       data: { qrGeneratedAt: now },
     });
     items.push({
-      table: serializeQrRow(updated, restaurant),
+      table: serializeQrRow(updated, restaurant, requestOrigin),
       menuUrl,
       dataUrl,
       filename: serializeQrRow(updated, restaurant).filename,

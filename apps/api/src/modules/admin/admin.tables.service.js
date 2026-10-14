@@ -67,8 +67,18 @@ export function serializeDiningTable(table, { restaurantSlug } = {}) {
  * Public guest URL encoded in QR codes.
  * Stable by design: regenerating QR images does not change this destination.
  */
-export function buildTableMenuUrl(restaurantSlug, tableNumber) {
-  const base = env.publicAppUrl;
+export function buildTableMenuUrl(restaurantSlug, tableNumber, requestOrigin) {
+  let base = env.publicAppUrl;
+  if (requestOrigin) {
+    try {
+      const origin = new URL(requestOrigin);
+      if (origin.protocol === 'http:' || origin.protocol === 'https:') {
+        base = origin.origin;
+      }
+    } catch {
+      // Keep the configured public URL when the request origin is invalid.
+    }
+  }
   const params = new URLSearchParams({
     table: String(tableNumber),
   });
@@ -227,7 +237,7 @@ export async function deleteAdminTable(restaurantId, tableId) {
   return { ok: true, id: tableId };
 }
 
-export async function getAdminTableQr(restaurantId, tableId) {
+export async function getAdminTableQr(restaurantId, tableId, requestOrigin) {
   const { generateAdminTableQr } = await import('./admin.qr.service.js');
-  return generateAdminTableQr(restaurantId, tableId);
+  return generateAdminTableQr(restaurantId, tableId, requestOrigin);
 }
