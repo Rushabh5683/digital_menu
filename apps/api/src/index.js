@@ -14,7 +14,7 @@ async function start() {
     process.exit(1);
   }
 
-  app.listen(env.port, '0.0.0.0', () => {
+  app.listen(env.port, '127.0.0.1', () => {
   console.log(`API listening on port ${env.port}`);
 });
 }
