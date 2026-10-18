@@ -121,6 +121,7 @@ model DiningTable {
   restaurantId  String
   tableNumber   Int
   name          String?
+  sectionName   String    @default("Main Hall")
   capacity      Int?
   isActive      Boolean   @default(true)
   qrGeneratedAt DateTime?

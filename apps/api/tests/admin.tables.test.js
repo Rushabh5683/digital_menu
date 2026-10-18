@@ -76,17 +76,24 @@ test('restaurant admin table APIs enforce ownership and uniqueness', async (t) =
   await t.test('creates table and rejects duplicate numbers', async () => {
     const created = await api.post('/api/admin/tables', {
       cookie,
-      body: { tableNumber: 1, capacity: 4, name: 'Window' },
+      body: { tableNumber: 1, capacity: 4, name: 'Window', sectionName: 'Main Dining' },
     });
     assert.equal(created.status, 201);
     assert.equal(created.body.table.tableNumber, 1);
     assert.equal(created.body.table.label, 'Table 01');
+    assert.equal(created.body.table.sectionName, 'Main Dining');
     assert.equal(created.body.table.capacity, 4);
     assert.match(created.body.table.menuUrl, /table=1/);
 
+    const missingSection = await api.post('/api/admin/tables', {
+      cookie,
+      body: { tableNumber: 2 },
+    });
+    assert.equal(missingSection.status, 400);
+
     const dup = await api.post('/api/admin/tables', {
       cookie,
-      body: { tableNumber: 1 },
+      body: { tableNumber: 1, sectionName: 'Main Dining' },
     });
     assert.equal(dup.status, 409);
   });
@@ -94,11 +101,12 @@ test('restaurant admin table APIs enforce ownership and uniqueness', async (t) =
   await t.test('bulk create skips existing numbers', async () => {
     const bulk = await api.post('/api/admin/tables/bulk', {
       cookie,
-      body: { from: 1, to: 3, capacity: 2 },
+      body: { from: 1, to: 3, capacity: 2, sectionName: 'Patio' },
     });
     assert.equal(bulk.status, 201);
     assert.equal(bulk.body.createdCount, 2);
     assert.deepEqual(bulk.body.skipped, [1]);
+    assert.ok(bulk.body.created.every((table) => table.sectionName === 'Patio'));
   });
 
   await t.test('cannot mutate another restaurant table', async () => {

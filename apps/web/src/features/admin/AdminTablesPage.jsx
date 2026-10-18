@@ -11,10 +11,12 @@ import { api } from '../../shared/api/client.js';
 import { Alert } from '../../shared/ui/Alert.jsx';
 import { Button } from '../../shared/ui/Button.jsx';
 import { Field } from '../../shared/ui/Field.jsx';
-import { Input } from '../../shared/ui/FormControls.jsx';
+import { Input, Select } from '../../shared/ui/FormControls.jsx';
 import { FormSection } from '../../shared/ui/FormSection.jsx';
 import { ConfirmDialog, Modal } from '../../shared/ui/Modal.jsx';
 import { withStaffMenuPreview } from '../menu/lib/staffPreview.js';
+
+const CREATE_SECTION_VALUE = '__create_section__';
 
 function downloadDataUrl(dataUrl, filename) {
   const link = document.createElement('a');
@@ -42,6 +44,8 @@ export function AdminTablesPage() {
   });
 
   const tables = tablesQuery.data || [];
+  const sectionNames = [...new Set(tables.map((table) => table.sectionName?.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const filtered = useMemo(() => {
     if (filter === 'active') return tables.filter((table) => table.isActive);
     if (filter === 'inactive') return tables.filter((table) => !table.isActive);
@@ -127,6 +131,7 @@ export function AdminTablesPage() {
       id: null,
       tableNumber: '',
       name: '',
+      sectionName: '',
       capacity: '4',
       isActive: true,
     });
@@ -265,6 +270,9 @@ export function AdminTablesPage() {
                     {table.name ? (
                       <p className="mt-1 text-sm font-medium text-[var(--muted)]">{table.name}</p>
                     ) : null}
+                    <p className="mt-1 text-xs font-semibold text-[var(--teal)]">
+                      {table.sectionName || 'Main Hall'}
+                    </p>
                   </div>
                   <span
                     className={[
@@ -297,6 +305,7 @@ export function AdminTablesPage() {
                         id: table.id,
                         tableNumber: String(table.tableNumber),
                         name: table.name || '',
+                        sectionName: table.sectionName || 'Main Hall',
                         capacity: table.capacity != null ? String(table.capacity) : '',
                         isActive: table.isActive,
                       });
@@ -373,6 +382,7 @@ export function AdminTablesPage() {
         {editor ? (
           <TableForm
             initial={editor}
+            sections={sectionNames}
             error={formError}
             loading={saveMutation.isPending}
             onCancel={() => setEditor(null)}
@@ -388,6 +398,7 @@ export function AdminTablesPage() {
         onClose={() => !bulkMutation.isPending && setBulkOpen(false)}
       >
         <BulkCreateForm
+          sections={sectionNames}
           error={bulkError}
           loading={bulkMutation.isPending}
           onCancel={() => setBulkOpen(false)}
@@ -465,9 +476,44 @@ function StatCard({ label, value }) {
   );
 }
 
-function TableForm({ initial, error, loading, onSubmit, onCancel }) {
+function SectionPicker({ id, sections, value, onChange, newSectionName, onNewSectionNameChange, loading }) {
+  return (
+    <>
+      <Field label="Section" htmlFor={id} required>
+        <Select
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={loading}
+        >
+          <option value="">Select a section</option>
+          {sections.map((section) => (
+            <option key={section} value={section}>{section}</option>
+          ))}
+          <option value={CREATE_SECTION_VALUE}>Create a new section</option>
+        </Select>
+      </Field>
+      {value === CREATE_SECTION_VALUE ? (
+        <Field label="New section name" htmlFor={`${id}-new`} required>
+          <Input
+            id={`${id}-new`}
+            value={newSectionName}
+            onChange={(event) => onNewSectionNameChange(event.target.value)}
+            maxLength={80}
+            disabled={loading}
+            autoFocus
+          />
+        </Field>
+      ) : null}
+    </>
+  );
+}
+
+function TableForm({ initial, sections, error, loading, onSubmit, onCancel }) {
   const [tableNumber, setTableNumber] = useState(initial.tableNumber || '');
   const [name, setName] = useState(initial.name || '');
+  const [sectionChoice, setSectionChoice] = useState(initial.sectionName || '');
+  const [newSectionName, setNewSectionName] = useState('');
   const [capacity, setCapacity] = useState(initial.capacity || '');
   const [isActive, setIsActive] = useState(initial.isActive !== false);
   const [localError, setLocalError] = useState(null);
@@ -477,6 +523,12 @@ function TableForm({ initial, error, loading, onSubmit, onCancel }) {
     const number = Number(tableNumber);
     if (!Number.isInteger(number) || number < 1) {
       setLocalError('Enter a valid table number (1 or higher)');
+      return;
+    }
+    const sectionName =
+      sectionChoice === CREATE_SECTION_VALUE ? newSectionName.trim() : sectionChoice.trim();
+    if (!sectionName) {
+      setLocalError('Select or enter a section');
       return;
     }
     let capacityValue = null;
@@ -491,6 +543,7 @@ function TableForm({ initial, error, loading, onSubmit, onCancel }) {
     onSubmit({
       tableNumber: number,
       name: name.trim() || null,
+      sectionName,
       capacity: capacityValue,
       isActive,
     });
@@ -525,6 +578,15 @@ function TableForm({ initial, error, loading, onSubmit, onCancel }) {
             />
           </Field>
         </div>
+        <SectionPicker
+          id="table-section"
+          sections={sections}
+          value={sectionChoice}
+          onChange={setSectionChoice}
+          newSectionName={newSectionName}
+          onNewSectionNameChange={setNewSectionName}
+          loading={loading}
+        />
         <Field label="Display name" htmlFor="table-name" hint="Optional, e.g. Patio 3">
           <Input
             id="table-name"
@@ -557,10 +619,12 @@ function TableForm({ initial, error, loading, onSubmit, onCancel }) {
   );
 }
 
-function BulkCreateForm({ error, loading, onSubmit, onCancel }) {
+function BulkCreateForm({ sections, error, loading, onSubmit, onCancel }) {
   const [from, setFrom] = useState('1');
   const [to, setTo] = useState('20');
   const [capacity, setCapacity] = useState('4');
+  const [sectionChoice, setSectionChoice] = useState('');
+  const [newSectionName, setNewSectionName] = useState('');
   const [localError, setLocalError] = useState(null);
 
   function handleSubmit(event) {
@@ -575,6 +639,12 @@ function BulkCreateForm({ error, loading, onSubmit, onCancel }) {
       setLocalError('Limit bulk create to 100 tables at a time');
       return;
     }
+    const sectionName =
+      sectionChoice === CREATE_SECTION_VALUE ? newSectionName.trim() : sectionChoice.trim();
+    if (!sectionName) {
+      setLocalError('Select or enter a section');
+      return;
+    }
     let capacityValue = null;
     if (String(capacity).trim() !== '') {
       capacityValue = Number(capacity);
@@ -584,12 +654,21 @@ function BulkCreateForm({ error, loading, onSubmit, onCancel }) {
       }
     }
     setLocalError(null);
-    onSubmit({ from: fromNum, to: toNum, capacity: capacityValue, isActive: true });
+    onSubmit({ from: fromNum, to: toNum, sectionName, capacity: capacityValue, isActive: true });
   }
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       {(localError || error) && <Alert tone="error">{localError || error}</Alert>}
+      <SectionPicker
+        id="bulk-section"
+        sections={sections}
+        value={sectionChoice}
+        onChange={setSectionChoice}
+        newSectionName={newSectionName}
+        onNewSectionNameChange={setNewSectionName}
+        loading={loading}
+      />
       <FormSection title="Number range">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="From" htmlFor="bulk-from" required>
