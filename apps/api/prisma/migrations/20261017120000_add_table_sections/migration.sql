@@ -1,0 +1,2 @@
+ALTER TABLE "Table"
+ADD COLUMN "sectionName" TEXT NOT NULL DEFAULT 'Main Hall';

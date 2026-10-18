@@ -202,6 +202,18 @@ export function AdminOrdersPage() {
       });
   }, [tables, occupiedByTable, anyOpenByTable, debouncedSearch]);
 
+  const floorSections = useMemo(() => {
+    const sections = new Map();
+    for (const tile of floorTiles) {
+      const sectionName = tile.table.sectionName?.trim() || 'Main Hall';
+      if (!sections.has(sectionName)) sections.set(sectionName, []);
+      sections.get(sectionName).push(tile);
+    }
+    return [...sections.entries()].sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+  }, [floorTiles]);
+
   useEffect(() => {
     const placed = orders.filter(
       (order) => order.status === 'PLACED' && orderHasItems(order),
@@ -528,36 +540,48 @@ export function AdminOrdersPage() {
           </p>
         </div>
       ) : (
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-          {floorTiles.map(({ table, order, openTicket }) => {
-            const flashing =
-              flashTableKeys.has(table.id) || flashTableKeys.has(`n-${table.tableNumber}`);
-            return (
-              <TableFloorTile
-                key={table.id}
-                table={table}
-                order={order}
-                flashing={flashing}
-                opening={
-                  startOrderMutation.isPending &&
-                  startOrderMutation.variables?.id === table.id
-                }
-                onOpen={() => openTable(table, order, openTicket)}
-                onPreview={canSettle ? () => handleFloorPreview(order) : null}
-                onPrint={canSettle ? () => handleFloorPrint(order) : null}
-                onComplete={canSettle ? () => order && setCompleteTarget(order) : null}
-                canSettle={canSettle}
-                completing={
-                  statusMutation.isPending &&
-                  statusMutation.variables?.orderId === order?.id
-                }
-                printing={
-                  (qzPrinting || printMutation.isPending) &&
-                  printMutation.variables?.id === order?.id
-                }
-              />
-            );
-          })}
+        <div className="space-y-8">
+          {floorSections.map(([sectionName, sectionTiles]) => (
+            <section key={sectionName} className="space-y-3">
+              <div className="flex items-center gap-3 border-b border-[var(--line)] pb-2">
+                <h3 className="text-sm font-bold text-[var(--ink)]">{sectionName}</h3>
+                <span className="text-xs text-[var(--muted)]">
+                  {sectionTiles.length} table{sectionTiles.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="grid min-w-0 grid-cols-2 content-start items-start gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+                {sectionTiles.map(({ table, order, openTicket }) => {
+                  const flashing =
+                    flashTableKeys.has(table.id) || flashTableKeys.has(`n-${table.tableNumber}`);
+                  return (
+                    <TableFloorTile
+                      key={table.id}
+                      table={table}
+                      order={order}
+                      flashing={flashing}
+                      opening={
+                        startOrderMutation.isPending &&
+                        startOrderMutation.variables?.id === table.id
+                      }
+                      onOpen={() => openTable(table, order, openTicket)}
+                      onPreview={canSettle ? () => handleFloorPreview(order) : null}
+                      onPrint={canSettle ? () => handleFloorPrint(order) : null}
+                      onComplete={canSettle ? () => order && setCompleteTarget(order) : null}
+                      canSettle={canSettle}
+                      completing={
+                        statusMutation.isPending &&
+                        statusMutation.variables?.orderId === order?.id
+                      }
+                      printing={
+                        (qzPrinting || printMutation.isPending) &&
+                        printMutation.variables?.id === order?.id
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 
@@ -624,6 +648,7 @@ function TableFloorTile({
 }) {
   const state = tableFloorState(order);
   const label = `T${String(table.tableNumber).padStart(2, '0')}`;
+  const displayName = table.name?.trim() || label;
   const displayNo = order ? formatOrderDisplayNumber(order.orderNumber) : null;
   const itemCount = (order?.items || []).reduce(
     (sum, item) => sum + (Number(item.quantity) || 0),
@@ -656,7 +681,7 @@ function TableFloorTile({
   return (
     <article
       className={[
-        'relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border p-2.5 shadow-[0_10px_22px_-20px_rgba(15,31,28,0.45)] transition sm:p-3',
+        'relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border p-2 shadow-[0_10px_22px_-20px_rgba(15,31,28,0.45)] transition sm:p-2.5',
         shell,
         flashing ? 'ops-card-flash' : '',
         opening ? 'opacity-70' : '',
@@ -670,7 +695,7 @@ function TableFloorTile({
             className="truncate text-lg leading-tight tracking-tight text-[var(--ink)] sm:text-xl"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            {label}
+            {displayName}
           </p>
           <p className={['mt-0.5 text-[9px] font-bold uppercase tracking-[0.12em]', statusTone].join(' ')}>
             {statusLabel}
@@ -697,7 +722,7 @@ function TableFloorTile({
           <button
             type="button"
             onClick={onOpen}
-            className="mt-2 min-w-0 flex-1 space-y-0.5 text-left"
+            className="mt-1.5 min-w-0 space-y-0.5 text-left"
           >
             <p className="truncate text-xs font-semibold text-[var(--ink)] sm:text-sm">
               {itemCount} item{itemCount === 1 ? '' : 's'} · {formatMoney(order.total)}
@@ -722,62 +747,62 @@ function TableFloorTile({
             </ul>
           </button>
 
-          <div className="mt-1.5 flex min-w-0 flex-col gap-1">
-            <div className="grid min-w-0 grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={onOpen}
-                className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border border-[var(--line)] bg-white px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-[var(--ink)] hover:bg-[var(--surface)]"
-              >
-                <Eye size={10} className="shrink-0" />
-                <span className="truncate">Open</span>
-              </button>
-              {canSettle ? (
+          <div className={`mt-1.5 grid min-w-0 gap-1 ${canSettle ? 'grid-cols-4' : 'grid-cols-1'}`}>
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label="Open order"
+              title="Open order"
+              className="inline-flex h-8 w-full min-w-0 items-center justify-center rounded-md border border-[var(--line)] bg-white text-[var(--ink)] hover:bg-[var(--surface)]"
+            >
+              <Eye size={14} />
+            </button>
+            {canSettle ? (
+              <>
                 <button
                   type="button"
                   disabled={itemCount === 0}
                   onClick={onPreview}
-                  className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border border-[var(--line)] bg-white px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-[var(--ink)] hover:bg-[var(--surface)] disabled:opacity-60"
+                  aria-label="Preview bill"
+                  title="Preview bill"
+                  className="inline-flex h-8 w-full min-w-0 items-center justify-center rounded-md border border-[var(--line)] bg-white text-[var(--ink)] hover:bg-[var(--surface)] disabled:opacity-60"
                 >
-                  <FileText size={10} className="shrink-0" />
-                  <span className="truncate">Preview</span>
+                  <FileText size={14} />
                 </button>
-              ) : null}
-            </div>
-            {canSettle ? (
-              <div className="grid min-w-0 grid-cols-2 gap-1">
                 <button
                   type="button"
                   disabled={printing || itemCount === 0}
                   onClick={onPrint}
+                  aria-label="Print bill"
+                  title="Print bill"
                   className={[
-                    'inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md border px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] disabled:opacity-60',
+                    'inline-flex h-8 w-full min-w-0 items-center justify-center rounded-md border disabled:opacity-60',
                     state === 'billed'
                       ? 'border-[var(--teal)]/40 bg-[var(--teal)]/15 text-[var(--teal)] hover:bg-[var(--teal)]/25'
                       : 'border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-deep)] hover:bg-[var(--accent)]/25',
                   ].join(' ')}
                 >
                   {printing ? (
-                    <LoaderCircle size={10} className="shrink-0 animate-spin" />
+                    <LoaderCircle size={14} className="animate-spin" />
                   ) : (
-                    <Printer size={10} className="shrink-0" />
+                    <Printer size={14} />
                   )}
-                  <span className="truncate">Print</span>
                 </button>
                 <button
                   type="button"
                   disabled={completing || itemCount === 0}
                   onClick={onComplete}
-                  className="inline-flex min-h-7 w-full min-w-0 items-center justify-center gap-0.5 overflow-hidden rounded-md bg-[var(--ink)] px-1 py-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-white hover:bg-black disabled:opacity-60"
+                  aria-label="Complete order"
+                  title="Complete order"
+                  className="inline-flex h-8 w-full min-w-0 items-center justify-center rounded-md bg-[var(--ink)] text-white hover:bg-black disabled:opacity-60"
                 >
                   {completing ? (
-                    <LoaderCircle size={10} className="shrink-0 animate-spin" />
+                    <LoaderCircle size={14} className="animate-spin" />
                   ) : (
-                    <Check size={10} className="shrink-0" />
+                    <Check size={14} />
                   )}
-                  <span className="truncate">Complete</span>
                 </button>
-              </div>
+              </>
             ) : null}
           </div>
         </>
@@ -786,7 +811,7 @@ function TableFloorTile({
           type="button"
           disabled={opening}
           onClick={onOpen}
-          className="mt-2 flex min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-1.5 py-2.5 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60 sm:py-3"
+          className="mt-2 flex min-w-0 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-1.5 py-3 text-center transition hover:border-[var(--ink)]/30 hover:bg-white disabled:opacity-60"
         >
           {opening ? (
             <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />

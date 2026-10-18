@@ -11,6 +11,12 @@ function optionalString(value, max = 120) {
   return text;
 }
 
+function requiredString(value, label, max = 80) {
+  const text = optionalString(value, max);
+  if (!text) throw new AppError(`${label} is required`, 400);
+  return text;
+}
+
 function parseTableNumber(value, label = 'Table number') {
   const num = Number(value);
   if (!Number.isInteger(num) || num < 1 || num > 9999) {
@@ -54,6 +60,7 @@ export function serializeDiningTable(table, { restaurantSlug } = {}) {
     tableNumber: table.tableNumber,
     label: formatTableLabel(table.tableNumber),
     name: table.name,
+    sectionName: table.sectionName,
     capacity: table.capacity,
     isActive: Boolean(table.isActive),
     qrGeneratedAt: table.qrGeneratedAt ?? null,
@@ -117,6 +124,7 @@ export async function listAdminTables(restaurantId) {
 export async function createAdminTable(restaurantId, body = {}) {
   const tableNumber = parseTableNumber(body.tableNumber);
   const name = optionalString(body.name, 80);
+  const sectionName = requiredString(body.sectionName, 'Section name');
   const capacity = parseCapacity(body.capacity);
   const isActive = body.isActive === undefined ? true : parseBoolean(body.isActive, true);
   const slug = await getRestaurantSlug(restaurantId);
@@ -127,6 +135,7 @@ export async function createAdminTable(restaurantId, body = {}) {
         restaurantId,
         tableNumber,
         name,
+        sectionName,
         capacity,
         isActive,
       },
@@ -148,6 +157,7 @@ export async function bulkCreateAdminTables(restaurantId, body = {}) {
     throw new AppError('Bulk create is limited to 100 tables at a time', 400);
   }
 
+  const sectionName = requiredString(body.sectionName, 'Section name');
   const capacity = parseCapacity(body.capacity);
   const isActive = body.isActive === undefined ? true : parseBoolean(body.isActive, true);
   const slug = await getRestaurantSlug(restaurantId);
@@ -177,6 +187,7 @@ export async function bulkCreateAdminTables(restaurantId, body = {}) {
     data: toCreate.map((tableNumber) => ({
       restaurantId,
       tableNumber,
+      sectionName,
       capacity,
       isActive,
     })),
@@ -202,6 +213,9 @@ export async function updateAdminTable(restaurantId, tableId, body = {}) {
 
   if (body.tableNumber !== undefined) data.tableNumber = parseTableNumber(body.tableNumber);
   if (body.name !== undefined) data.name = optionalString(body.name, 80);
+  if (body.sectionName !== undefined) {
+    data.sectionName = requiredString(body.sectionName, 'Section name');
+  }
   if (body.capacity !== undefined) data.capacity = parseCapacity(body.capacity);
   if (body.isActive !== undefined) data.isActive = parseBoolean(body.isActive, true);
 
