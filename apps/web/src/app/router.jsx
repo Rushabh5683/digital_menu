@@ -1,6 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './layout.jsx';
-import { HomePage } from '../pages/HomePage.jsx';
 import { HealthPage } from '../pages/HealthPage.jsx';
 import { MenuPage } from '../features/menu/MenuPage.jsx';
 import { LoginPage } from '../features/auth/LoginPage.jsx';
@@ -79,11 +78,11 @@ export function AppRouter() {
         {/* Legacy slug URL → auth-bound /admin */}
         <Route path="/admin/:restaurantSlug/*" element={<Navigate to="/admin" replace />} />
 
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route element={<AppLayout />}>
-          <Route path="/" element={<HomePage />} />
           <Route path="/health" element={<HealthPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
