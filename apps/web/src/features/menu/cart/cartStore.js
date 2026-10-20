@@ -45,6 +45,7 @@ function normalizeItem(dish, quantity) {
     dishId: dish.id,
     name: dish.name,
     price: Number(dish.price),
+    isTaxApplicable: dish.isTaxApplicable !== false,
     imageUrl: dish.imageUrl || null,
     quantity,
     isAvailable: dish.isAvailable !== false,
@@ -57,8 +58,18 @@ export function computeCartTotals(items = []) {
     (sum, item) => sum + Number(item.price) * item.quantity,
     0,
   );
+  const taxableSubtotal = items.reduce(
+    (sum, item) =>
+      item.isTaxApplicable !== false ? sum + Number(item.price) * item.quantity : sum,
+    0,
+  );
   const total = Math.round(subtotal * 100) / 100;
-  return { itemCount, subtotal: total, total };
+  return {
+    itemCount,
+    subtotal: total,
+    taxableSubtotal: Math.round(taxableSubtotal * 100) / 100,
+    total,
+  };
 }
 
 /**
@@ -98,6 +109,7 @@ export function createCartController(scope) {
       existing.quantity = nextQty;
       existing.name = dish.name;
       existing.price = Number(dish.price);
+      existing.isTaxApplicable = dish.isTaxApplicable !== false;
       existing.imageUrl = dish.imageUrl || null;
       existing.isAvailable = true;
     } else {
@@ -164,6 +176,7 @@ export function createCartController(scope) {
           ...item,
           name: dish.name,
           price: Number(dish.price),
+          isTaxApplicable: dish.isTaxApplicable !== false,
           imageUrl: dish.imageUrl || null,
           isAvailable: true,
         };

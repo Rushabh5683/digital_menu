@@ -122,6 +122,14 @@ test('restaurant admin menu APIs enforce ownership', async (t) => {
     });
     assert.equal(dish.status, 201);
     assert.equal(dish.body.dish.price, 180);
+    assert.equal(dish.body.dish.isTaxApplicable, true);
+
+    const taxExempt = await api.patch(`/api/admin/dishes/${dish.body.dish.id}`, {
+      cookie,
+      body: { isTaxApplicable: false },
+    });
+    assert.equal(taxExempt.status, 200);
+    assert.equal(taxExempt.body.dish.isTaxApplicable, false);
 
     const published = await api.post(`/api/admin/menus/${created.body.menu.id}/publish`, {
       cookie,
@@ -135,6 +143,7 @@ test('restaurant admin menu APIs enforce ownership', async (t) => {
     assert.equal(publicMenu.body.menu.id, created.body.menu.id);
     assert.equal(publicMenu.body.menu.categories[0].name, 'Starters');
     assert.equal(publicMenu.body.menu.categories[0].dishes[0].name, 'Soup');
+    assert.equal(publicMenu.body.menu.categories[0].dishes[0].isTaxApplicable, false);
   });
 
   await t.test('cannot read or mutate another restaurant menu entities', async () => {

@@ -74,8 +74,13 @@ export function CartDrawer({
     : null;
 
   const taxEstimate = useMemo(
-    () => computeExclusiveGst(cart?.subtotal || 0, gstConfig || {}),
-    [cart?.subtotal, gstConfig],
+    () =>
+      computeExclusiveGst(
+        cart?.subtotal || 0,
+        gstConfig || {},
+        cart?.taxableSubtotal ?? cart?.subtotal ?? 0,
+      ),
+    [cart?.subtotal, cart?.taxableSubtotal, gstConfig],
   );
   const displayTotal = taxEstimate.total;
 

@@ -6,6 +6,7 @@ export function serializeDish(dish) {
     name: dish.name,
     description: dish.description,
     price: Number(dish.price),
+    isTaxApplicable: dish.isTaxApplicable !== false,
     imageUrl: toPublicUploadUrl(dish.imageUrl),
     ingredients: dish.ingredients ?? [],
     dietaryTags: dish.dietaryTags ?? [],

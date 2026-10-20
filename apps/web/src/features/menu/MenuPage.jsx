@@ -649,7 +649,11 @@ export function MenuPage() {
     cgstRate: restaurant.cgstRate,
     sgstRate: restaurant.sgstRate,
   };
-  const cartDisplayTotal = computeExclusiveGst(cart.subtotal, gstConfig).total;
+  const cartDisplayTotal = computeExclusiveGst(
+    cart.subtotal,
+    gstConfig,
+    cart.taxableSubtotal,
+  ).total;
   const currency = restaurant.currencyCode || 'INR';
 
   if (!isStaffPreview && needsPicker && !effectiveTableNumber) {
