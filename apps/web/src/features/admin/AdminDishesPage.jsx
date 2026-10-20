@@ -219,6 +219,7 @@ export function AdminDishesPage() {
       name: '',
       description: '',
       price: '',
+      isTaxApplicable: true,
       imageUrl: '',
       ingredients: '',
       dietaryTags: [],
@@ -469,6 +470,7 @@ export function AdminDishesPage() {
                         name: dish.name,
                         description: dish.description === '—' ? '' : dish.description || '',
                         price: String(dish.price ?? ''),
+                        isTaxApplicable: dish.isTaxApplicable !== false,
                         imageUrl: dish.imageUrl || '',
                         ingredients: (dish.ingredients || []).join(', '),
                         dietaryTags: dish.dietaryTags || [],
@@ -531,6 +533,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
   const [name, setName] = useState(initial.name || '');
   const [description, setDescription] = useState(initial.description || '');
   const [price, setPrice] = useState(initial.price || '');
+  const [isTaxApplicable, setIsTaxApplicable] = useState(initial.isTaxApplicable !== false);
   const [imageUrl, setImageUrl] = useState(initial.imageUrl || '');
   const [pendingFile, setPendingFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(() =>
@@ -705,6 +708,7 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
       name: trimmedName,
       description: trimmedDescription,
       price: priceNumber,
+      isTaxApplicable,
       imageUrl: nextImageUrl,
       ingredients: parseList(ingredients),
       dietaryTags,
@@ -750,16 +754,28 @@ function DishForm({ initial, categories, error, loading, onSubmit, onCancel }) {
             </Select>
           </Field>
           <Field label="Price (INR)" htmlFor="dish-price" required>
-            <Input
-              id="dish-price"
-              type="number"
-              min="0"
-              step="1"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              disabled={busy}
-              required
-            />
+            <div className="space-y-3">
+              <Input
+                id="dish-price"
+                type="number"
+                min="0"
+                step="1"
+                value={price}
+                onChange={(event) => setPrice(event.target.value)}
+                disabled={busy}
+                required
+              />
+              <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[var(--line)]"
+                  checked={isTaxApplicable}
+                  onChange={(event) => setIsTaxApplicable(event.target.checked)}
+                  disabled={busy}
+                />
+                Tax applicable
+              </label>
+            </div>
           </Field>
         </div>
         <Field label="Description" htmlFor="dish-description" required>

@@ -320,6 +320,8 @@ export async function createAdminDish(restaurantId, categoryId, body = {}) {
   const ingredients = parseStringArray(body.ingredients, 'ingredients');
   const dietaryTags = parseStringArray(body.dietaryTags, 'dietary tags');
   const isAvailable = body.isAvailable === undefined ? true : parseBoolean(body.isAvailable, true);
+  const isTaxApplicable =
+    body.isTaxApplicable === undefined ? true : parseBoolean(body.isTaxApplicable, true);
 
   const maxOrder = await prisma.dish.aggregate({
     where: { categoryId },
@@ -336,6 +338,7 @@ export async function createAdminDish(restaurantId, categoryId, body = {}) {
       ingredients,
       dietaryTags,
       isAvailable,
+      isTaxApplicable,
       displayOrder: (maxOrder._max.displayOrder || 0) + 1,
     },
   });
@@ -356,6 +359,9 @@ export async function updateAdminDish(restaurantId, dishId, body = {}) {
   if (body.ingredients !== undefined) data.ingredients = parseStringArray(body.ingredients, 'ingredients');
   if (body.dietaryTags !== undefined) data.dietaryTags = parseStringArray(body.dietaryTags, 'dietary tags');
   if (body.isAvailable !== undefined) data.isAvailable = parseBoolean(body.isAvailable, true);
+  if (body.isTaxApplicable !== undefined) {
+    data.isTaxApplicable = parseBoolean(body.isTaxApplicable, true);
+  }
 
   if (body.categoryId !== undefined && body.categoryId !== existing.categoryId) {
     const nextCategory = await getCategoryOwned(body.categoryId, restaurantId);

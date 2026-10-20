@@ -1,5 +1,6 @@
 /**
  * Tax-exclusive GST: total = subtotal + CGST + SGST (restaurant-wide rates).
+ * GST may be limited to the taxable portion of a mixed order.
  * Same pattern PetPooja uses for a restaurant’s default dine-in slab.
  */
 
@@ -14,23 +15,25 @@ export function normalizeGstRate(value) {
 }
 
 /**
- * @param {number} subtotal
+ * @param {number} subtotal Total of every order line before tax.
  * @param {{ gstEnabled?: boolean, cgstRate?: number|string, sgstRate?: number|string }} settings
+ * @param {number} taxableSubtotal Total of only tax-applicable order lines.
  */
-export function computeExclusiveGst(subtotal, settings = {}) {
+export function computeExclusiveGst(subtotal, settings = {}, taxableSubtotal = subtotal) {
   const food = money(subtotal);
+  const taxableFood = Math.min(food, Math.max(0, money(taxableSubtotal)));
   const enabled = Boolean(settings.gstEnabled);
   const cgstRate = enabled ? normalizeGstRate(settings.cgstRate) : 0;
   const sgstRate = enabled ? normalizeGstRate(settings.sgstRate) : 0;
-  const cgstAmount = enabled ? money((food * cgstRate) / 100) : 0;
-  const sgstAmount = enabled ? money((food * sgstRate) / 100) : 0;
+  const cgstAmount = enabled ? money((taxableFood * cgstRate) / 100) : 0;
+  const sgstAmount = enabled ? money((taxableFood * sgstRate) / 100) : 0;
   const taxAmount = money(cgstAmount + sgstAmount);
   const rawTotal = money(food + taxAmount);
   // PetPooja-style: round grand total to nearest rupee
   const total = Math.round(rawTotal);
   const roundOffAmount = money(total - rawTotal);
   return {
-    gstEnabled: enabled && (cgstRate > 0 || sgstRate > 0),
+    gstEnabled: enabled && taxableFood > 0 && (cgstRate > 0 || sgstRate > 0),
     cgstRate,
     sgstRate,
     cgstAmount,

@@ -249,6 +249,8 @@ model OrderItem {
   dishId           String?
   dishNameSnapshot String
   priceSnapshot    Decimal @db.Decimal(10, 2)
+  /// Taxability when this line was added. Preserves the bill if the dish changes later.
+  isTaxApplicable  Boolean @default(true)
   quantity         Int
   subtotal         Decimal @db.Decimal(10, 2)
   imageUrl         String?
@@ -299,6 +301,8 @@ model Dish {
   name         String
   description  String
   price        Decimal  @db.Decimal(10, 2)
+  /// Whether the restaurant-wide GST rates apply to this dish.
+  isTaxApplicable Boolean @default(true)
   imageUrl     String?
   ingredients  String[]
   dietaryTags  String[]

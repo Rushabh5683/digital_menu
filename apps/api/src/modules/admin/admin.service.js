@@ -62,6 +62,7 @@ function serializeOrder(order, { includeItems = false } = {}) {
       dishId: item.dishId,
       dishNameSnapshot: item.dishNameSnapshot,
       priceSnapshot: Number(item.priceSnapshot),
+      isTaxApplicable: item.isTaxApplicable !== false,
       quantity: item.quantity,
       subtotal: Number(item.subtotal),
       imageUrl: item.imageUrl ?? null,
@@ -327,7 +328,7 @@ async function recalculateOpenOrderTaxes(restaurantId) {
       restaurantId,
       status: { in: ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'] },
     },
-    select: { id: true, items: { select: { subtotal: true } } },
+    select: { id: true, items: { select: { subtotal: true, isTaxApplicable: true } } },
   });
 
   for (const order of openOrders) {
@@ -335,7 +336,15 @@ async function recalculateOpenOrderTaxes(restaurantId) {
       Math.round(
         order.items.reduce((sum, item) => sum + Number(item.subtotal), 0) * 100,
       ) / 100;
-    const tax = computeExclusiveGst(subtotal, restaurant);
+    const taxableSubtotal =
+      Math.round(
+        order.items.reduce(
+          (sum, item) =>
+            item.isTaxApplicable !== false ? sum + Number(item.subtotal) : sum,
+          0,
+        ) * 100,
+      ) / 100;
+    const tax = computeExclusiveGst(subtotal, restaurant, taxableSubtotal);
     await prisma.order.update({
       where: { id: order.id },
       data: {

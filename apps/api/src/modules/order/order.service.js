@@ -246,6 +246,7 @@ export function serializeOrder(order) {
       dishId: item.dishId,
       dishNameSnapshot: item.dishNameSnapshot,
       priceSnapshot: Number(item.priceSnapshot),
+      isTaxApplicable: item.isTaxApplicable !== false,
       quantity: item.quantity,
       subtotal: Number(item.subtotal),
       imageUrl: item.imageUrl ?? null,
@@ -311,16 +312,20 @@ async function buildPricedLines(restaurantId, rawItems = []) {
   const dishMap = new Map(dishes.map((dish) => [dish.id, dish]));
   const lines = [];
   let subtotal = 0;
+  let taxableSubtotal = 0;
 
   for (const [dishId, quantity] of qtyByDish.entries()) {
     const dish = dishMap.get(dishId);
     const priceSnapshot = money(dish.price);
     const lineSubtotal = money(priceSnapshot * quantity);
     subtotal += lineSubtotal;
+    const isTaxApplicable = dish.isTaxApplicable !== false;
+    if (isTaxApplicable) taxableSubtotal += lineSubtotal;
     lines.push({
       dishId: dish.id,
       dishNameSnapshot: dish.name,
       priceSnapshot,
+      isTaxApplicable,
       quantity,
       subtotal: lineSubtotal,
       imageUrl: dish.imageUrl,
@@ -328,15 +333,17 @@ async function buildPricedLines(restaurantId, rawItems = []) {
   }
 
   subtotal = money(subtotal);
+  taxableSubtotal = money(taxableSubtotal);
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: restaurantId },
     select: { gstEnabled: true, cgstRate: true, sgstRate: true },
   });
-  const tax = computeExclusiveGst(subtotal, restaurant || {});
+  const tax = computeExclusiveGst(subtotal, restaurant || {}, taxableSubtotal);
 
   return {
     lines,
     subtotal,
+    taxableSubtotal,
     ...taxFieldsFromCompute(tax),
   };
 }
@@ -457,8 +464,17 @@ export async function createOrder(body = {}) {
 
   // Validate dishes / prices first so bad carts fail with 400 even if a ticket is open.
   const priced = await buildPricedLines(restaurant.id, body.items);
-  const { lines, subtotal, total, cgstRate, sgstRate, cgstAmount, sgstAmount, taxAmount } =
-    priced;
+  const {
+    lines,
+    subtotal,
+    total,
+    cgstRate,
+    sgstRate,
+    cgstAmount,
+    sgstAmount,
+    taxAmount,
+    roundOffAmount,
+  } = priced;
 
   const openOrder = await resolveContinuableOpenOrder(restaurant.id, table.id);
   if (openOrder) {
@@ -492,6 +508,7 @@ export async function createOrder(body = {}) {
         cgstAmount,
         sgstAmount,
         taxAmount,
+        roundOffAmount,
         total,
         customerNote: note,
         items: { create: lines },
@@ -603,6 +620,7 @@ export async function addItemsToOrder(orderId, body = {}) {
             quantity,
             priceSnapshot,
             dishNameSnapshot: line.dishNameSnapshot,
+            isTaxApplicable: line.isTaxApplicable,
             subtotal: money(priceSnapshot * quantity),
             imageUrl: line.imageUrl,
           },
@@ -633,7 +651,13 @@ export async function addItemsToOrder(orderId, body = {}) {
 
     const items = await tx.orderItem.findMany({ where: { orderId: existing.id } });
     const subtotal = money(items.reduce((sum, item) => sum + Number(item.subtotal), 0));
-    const tax = computeExclusiveGst(subtotal, restaurant);
+    const taxableSubtotal = money(
+      items.reduce(
+        (sum, item) => (item.isTaxApplicable !== false ? sum + Number(item.subtotal) : sum),
+        0,
+      ),
+    );
+    const tax = computeExclusiveGst(subtotal, restaurant, taxableSubtotal);
 
     return tx.order.update({
       where: { id: existing.id },
@@ -1219,11 +1243,17 @@ async function loadEditableAdminOrder(restaurantId, orderId) {
 async function recalcAndReturnOrder(tx, orderId, restaurantId) {
   const items = await tx.orderItem.findMany({ where: { orderId } });
   const subtotal = money(items.reduce((sum, item) => sum + Number(item.subtotal), 0));
+  const taxableSubtotal = money(
+    items.reduce(
+      (sum, item) => (item.isTaxApplicable !== false ? sum + Number(item.subtotal) : sum),
+      0,
+    ),
+  );
   const restaurant = await tx.restaurant.findUnique({
     where: { id: restaurantId },
     select: { gstEnabled: true, cgstRate: true, sgstRate: true },
   });
-  const tax = computeExclusiveGst(subtotal, restaurant || {});
+  const tax = computeExclusiveGst(subtotal, restaurant || {}, taxableSubtotal);
   return tx.order.update({
     where: { id: orderId },
     data: { subtotal, ...taxFieldsFromCompute(tax) },
@@ -1258,6 +1288,7 @@ export async function adminAddItemsToOrder(restaurantId, orderId, rawItems = [])
             quantity,
             priceSnapshot,
             dishNameSnapshot: line.dishNameSnapshot,
+            isTaxApplicable: line.isTaxApplicable,
             subtotal: money(priceSnapshot * quantity),
             imageUrl: line.imageUrl,
           },
