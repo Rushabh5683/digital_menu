@@ -40,7 +40,9 @@ function formatRelative(value) {
   return hours === 1 ? '1 hr ago' : `${hours} hr ago`;
 }
 
-function playIncomingOrderAlarm(durationMs = 8_000) {
+const ORDER_ALERT_AUDIO_URL = '/sounds/order-alert.mp3';
+
+function playFallbackOrderAlarm(durationMs = 8_000) {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return () => {};
@@ -80,10 +82,44 @@ function playIncomingOrderAlarm(durationMs = 8_000) {
   }
 }
 
+function playIncomingOrderAlarm(durationMs = 8_000) {
+  let stopped = false;
+  let fallbackStop = null;
+  const audio = new Audio(ORDER_ALERT_AUDIO_URL);
+  audio.preload = 'auto';
+  audio.loop = true;
+  audio.volume = 1;
+
+  const playFallback = () => {
+    if (!stopped && !fallbackStop) {
+      fallbackStop = playFallbackOrderAlarm(durationMs);
+    }
+  };
+
+  // Audio files are louder and more recognisable than the built-in oscillator.
+  // Keep the old tone as a fallback if the file cannot be loaded or autoplay is blocked.
+  audio.addEventListener('error', playFallback, { once: true });
+  audio.play().catch(playFallback);
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    window.clearTimeout(stopTimer);
+    audio.pause();
+    audio.currentTime = 0;
+    fallbackStop?.();
+  };
+  const stopTimer = window.setTimeout(stop, durationMs);
+  return stop;
+}
+
 // Browsers require one staff interaction before a page may play alert audio.
 // Prime that permission on the first tap/click so later polling alerts can beep.
 function primeOrderAudio() {
   try {
+    const preload = new Audio(ORDER_ALERT_AUDIO_URL);
+    preload.preload = 'auto';
+    preload.load();
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     const ctx = new Ctx();
@@ -120,7 +156,6 @@ export function AdminOrdersPage() {
   const [actionError, setActionError] = useState(null);
   const [completeTarget, setCompleteTarget] = useState(null);
   const knownPlacedIdsRef = useRef(null);
-  const alertedKotTicketIdsRef = useRef(new Set());
   const kotAlarmStopRef = useRef(null);
   const autoKotPrintingRef = useRef(false);
   const autoKotCooldownUntilRef = useRef(0);
@@ -304,20 +339,6 @@ export function AdminOrdersPage() {
     return () => window.clearTimeout(clearTimer);
   }, [orders, soundOn]);
 
-  // Each durable KOT ticket represents one customer action: initial order or
-  // add-on. Sound once for eight seconds; no alarm survives beyond that window.
-  useEffect(() => {
-    const tickets = kotTicketsQuery.data || [];
-    const unseen = tickets.filter((ticket) => !alertedKotTicketIdsRef.current.has(ticket.id));
-    if (unseen.length === 0) return;
-
-    unseen.forEach((ticket) => alertedKotTicketIdsRef.current.add(ticket.id));
-    if (!soundOn) return;
-
-    kotAlarmStopRef.current?.();
-    kotAlarmStopRef.current = playIncomingOrderAlarm(8_000);
-  }, [kotTicketsQuery.data, soundOn]);
-
   useEffect(() => {
     return () => kotAlarmStopRef.current?.();
   }, []);
@@ -356,6 +377,11 @@ export function AdminOrdersPage() {
           order: ticket.order,
           cashierName: user?.name || 'Staff',
           onPrinted: async () => {
+            // Play only after QZ Tray has completed the KOT print.
+            if (soundOn) {
+              kotAlarmStopRef.current?.();
+              kotAlarmStopRef.current = playIncomingOrderAlarm(8_000);
+            }
             await api.markKotTicketPrinted(ticket.id);
             await queryClient.invalidateQueries({ queryKey: ['admin', 'kot-tickets'] });
           },
@@ -391,6 +417,7 @@ export function AdminOrdersPage() {
     queryClient,
     restaurant,
     restaurantQuery.data,
+    soundOn,
     user?.name,
   ]);
 
