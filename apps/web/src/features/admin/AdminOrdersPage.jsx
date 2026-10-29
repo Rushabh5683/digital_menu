@@ -41,6 +41,17 @@ function formatRelative(value) {
 }
 
 const ORDER_ALERT_AUDIO_URL = '/sounds/order-alert.mp3';
+let reusableOrderAlertAudio = null;
+
+function getOrderAlertAudio() {
+  if (!reusableOrderAlertAudio) {
+    reusableOrderAlertAudio = new Audio(ORDER_ALERT_AUDIO_URL);
+    reusableOrderAlertAudio.preload = 'auto';
+    reusableOrderAlertAudio.loop = true;
+    reusableOrderAlertAudio.volume = 1;
+  }
+  return reusableOrderAlertAudio;
+}
 
 function playFallbackOrderAlarm(durationMs = 8_000) {
   try {
@@ -85,10 +96,9 @@ function playFallbackOrderAlarm(durationMs = 8_000) {
 function playIncomingOrderAlarm(durationMs = 8_000) {
   let stopped = false;
   let fallbackStop = null;
-  const audio = new Audio(ORDER_ALERT_AUDIO_URL);
-  audio.preload = 'auto';
-  audio.loop = true;
-  audio.volume = 1;
+  const audio = getOrderAlertAudio();
+  audio.pause();
+  audio.currentTime = 0;
 
   const playFallback = () => {
     if (!stopped && !fallbackStop) {
@@ -111,24 +121,6 @@ function playIncomingOrderAlarm(durationMs = 8_000) {
   };
   const stopTimer = window.setTimeout(stop, durationMs);
   return stop;
-}
-
-// Browsers require one staff interaction before a page may play alert audio.
-// Prime that permission on the first tap/click so later polling alerts can beep.
-function primeOrderAudio() {
-  try {
-    const preload = new Audio(ORDER_ALERT_AUDIO_URL);
-    preload.preload = 'auto';
-    preload.load();
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    Promise.resolve(ctx.resume())
-      .catch(() => {})
-      .finally(() => ctx.close().catch(() => {}));
-  } catch {
-    // Audio remains optional when the browser does not support Web Audio.
-  }
 }
 
 function orderHasItems(order) {
@@ -168,11 +160,6 @@ export function AdminOrdersPage() {
     const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => window.clearTimeout(t);
   }, [search]);
-
-  useEffect(() => {
-    window.addEventListener('pointerdown', primeOrderAudio, { once: true });
-    return () => window.removeEventListener('pointerdown', primeOrderAudio);
-  }, []);
 
   useEffect(() => {
     const t = window.setInterval(() => setNowTick(Date.now()), 30000);
@@ -531,6 +518,14 @@ export function AdminOrdersPage() {
     });
   };
 
+  const handleTestOrderAlert = () => {
+    // This is an explicit browser user gesture. It unlocks the same reusable
+    // MP3 element used by the later automatic post-print callback.
+    setSoundOn(true);
+    kotAlarmStopRef.current?.();
+    kotAlarmStopRef.current = playIncomingOrderAlarm(8_000);
+  };
+
   const occupiedCount = floorTiles.filter((tile) => tile.order).length;
   const billedCount = floorTiles.filter((tile) => tableFloorState(tile.order) === 'billed').length;
   void nowTick;
@@ -630,6 +625,15 @@ export function AdminOrdersPage() {
             >
               {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
               {soundOn ? 'Sound on' : 'Sound off'}
+            </button>
+            <button
+              type="button"
+              onClick={handleTestOrderAlert}
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10"
+              title="Plays the 8-second KOT alert and enables sound for this browser tab."
+            >
+              <Volume2 size={14} />
+              Test alert
             </button>
             <span
               className={[
