@@ -44,6 +44,7 @@ function serializeOrder(order, { includeItems = false } = {}) {
     cancelReason: order.cancelReason ?? null,
     cancelledAt: order.cancelledAt ?? null,
     cancelledByUserId: order.cancelledByUserId ?? null,
+    customerKotSequence: Number(order.customerKotSequence ?? 0),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     placedAt: order.createdAt,

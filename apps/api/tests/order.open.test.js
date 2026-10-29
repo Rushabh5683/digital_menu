@@ -127,6 +127,39 @@ test('one open order per table + add items + restore by table', async (t) => {
     assert.equal(naan.quantity, 2);
   });
 
+  await t.test('creates distinct KOTs with only the newly requested quantities', async () => {
+    const tickets = await prisma.orderKotTicket.findMany({
+      where: { orderId },
+      orderBy: { sequence: 'asc' },
+    });
+
+    assert.equal(tickets.length, 2);
+    assert.equal(tickets[0].sequence, 1);
+    assert.deepEqual(tickets[0].items, [
+      {
+        dishId: dishA.id,
+        dishNameSnapshot: 'Biryani',
+        quantity: 1,
+        imageUrl: null,
+      },
+    ]);
+    assert.equal(tickets[1].sequence, 2);
+    assert.deepEqual(tickets[1].items, [
+      {
+        dishId: dishB.id,
+        dishNameSnapshot: 'Naan',
+        quantity: 2,
+        imageUrl: null,
+      },
+      {
+        dishId: dishA.id,
+        dishNameSnapshot: 'Biryani',
+        quantity: 1,
+        imageUrl: null,
+      },
+    ]);
+  });
+
   await t.test('restores open order by table after a new anonymous session', async () => {
     const sessionB = await prisma.session.create({
       data: {

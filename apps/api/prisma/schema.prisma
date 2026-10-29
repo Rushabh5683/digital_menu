@@ -111,6 +111,7 @@ model Restaurant {
   tables          DiningTable[]
   dayEndCloses    DayEndClose[]
   dayEndReopens   DayEndReopenLog[]
+  kotTickets      OrderKotTicket[]
 
   @@index([status])
   @@index([createdAt])
@@ -207,6 +208,9 @@ model Order {
   cancelReason       String?
   cancelledAt        DateTime?
   cancelledByUserId  String?
+  /// Increments only when a guest submits an initial order or adds more items.
+  /// Staff edits do not create a kitchen ticket.
+  customerKotSequence Int @default(0)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -216,6 +220,7 @@ model Order {
   cancelledBy User?       @relation("OrderCancellations", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
   items      OrderItem[]
   appreciationShares OrderAppreciationShare[]
+  kotTickets      OrderKotTicket[]
 
   @@index([restaurantId, createdAt])
   @@index([restaurantId, status])
@@ -225,6 +230,26 @@ model Order {
   @@index([orderNumber])
   @@index([restaurantId, paymentMethod])
   @@index([cancelledByUserId])
+}
+
+/// Durable kitchen-print queue. A guest order creates ticket 1; every guest
+/// add-on creates the next ticket with only its newly requested quantities.
+model OrderKotTicket {
+  id           String   @id @default(cuid())
+  restaurantId String
+  orderId      String
+  sequence     Int
+  items        Json
+  createdAt    DateTime @default(now())
+  claimedAt    DateTime?
+  printedAt    DateTime?
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, sequence])
+  @@index([restaurantId, printedAt, createdAt])
+  @@index([orderId])
 }
 
 /// Per-captain share of staff appreciation collected on a settled bill.

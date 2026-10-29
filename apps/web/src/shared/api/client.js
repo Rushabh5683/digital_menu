@@ -477,6 +477,31 @@ export const api = {
     });
   },
 
+  listPendingKotTickets() {
+    return request('/api/admin/kot-tickets');
+  },
+
+  claimKotTicket(ticketId) {
+    return request(`/api/admin/kot-tickets/${encodeURIComponent(ticketId)}/claim`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  markKotTicketPrinted(ticketId) {
+    return request(`/api/admin/kot-tickets/${encodeURIComponent(ticketId)}/printed`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  releaseKotTicket(ticketId) {
+    return request(`/api/admin/kot-tickets/${encodeURIComponent(ticketId)}/release`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
   listRestaurantTables(slug) {
     return request(`/api/restaurants/${encodeURIComponent(slug)}/tables`);
   },
