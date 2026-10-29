@@ -236,6 +236,7 @@ export function serializeOrder(order) {
     cancelReason: order.cancelReason ?? null,
     cancelledAt: order.cancelledAt ?? null,
     cancelledByUserId: order.cancelledByUserId ?? null,
+    customerKotSequence: Number(order.customerKotSequence ?? 0),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     // Back-compat for earlier admin UI fields
@@ -256,6 +257,39 @@ export function serializeOrder(order) {
       lineTotal: Number(item.subtotal),
     })),
   };
+}
+
+function serializeKotTicket(ticket) {
+  const order = serializeOrder(ticket.order);
+  const ticketItems = Array.isArray(ticket.items) ? ticket.items : [];
+
+  // KOTs must contain only the quantities in this guest submission. Reprinting
+  // the full order for an add-on would make the kitchen prepare duplicates.
+  order.items = ticketItems.map((item) => ({
+    dishId: item.dishId ?? null,
+    dishNameSnapshot: String(item.dishNameSnapshot || item.dishName || 'Item'),
+    quantity: Number(item.quantity) || 0,
+    imageUrl: item.imageUrl ?? null,
+  }));
+  order.createdAt = ticket.createdAt;
+  order.placedAt = ticket.createdAt;
+
+  return {
+    id: ticket.id,
+    orderId: ticket.orderId,
+    sequence: ticket.sequence,
+    createdAt: ticket.createdAt,
+    order,
+  };
+}
+
+function kotItemsFromLines(lines = []) {
+  return lines.map((line) => ({
+    dishId: line.dishId,
+    dishNameSnapshot: line.dishNameSnapshot,
+    quantity: Number(line.quantity) || 0,
+    imageUrl: line.imageUrl ?? null,
+  }));
 }
 
 /**
@@ -511,6 +545,7 @@ export async function createOrder(body = {}) {
         roundOffAmount,
         total,
         customerNote: note,
+        customerKotSequence: 1,
         items: { create: lines },
       },
       include: orderInclude,
@@ -522,6 +557,15 @@ export async function createOrder(body = {}) {
         data: { tableId: table.id },
       });
     }
+
+    await tx.orderKotTicket.create({
+      data: {
+        restaurantId: restaurant.id,
+        orderId: created.id,
+        sequence: 1,
+        items: kotItemsFromLines(lines),
+      },
+    });
 
     return created;
   });
@@ -659,14 +703,92 @@ export async function addItemsToOrder(orderId, body = {}) {
     );
     const tax = computeExclusiveGst(subtotal, restaurant, taxableSubtotal);
 
-    return tx.order.update({
+    const updated = await tx.order.update({
       where: { id: existing.id },
-      data: { subtotal, ...taxFieldsFromCompute(tax) },
+      data: {
+        subtotal,
+        ...taxFieldsFromCompute(tax),
+        customerKotSequence: { increment: 1 },
+      },
       include: orderInclude,
     });
+
+    await tx.orderKotTicket.create({
+      data: {
+        restaurantId: restaurant.id,
+        orderId: existing.id,
+        sequence: updated.customerKotSequence,
+        items: kotItemsFromLines(lines),
+      },
+    });
+
+    return updated;
   });
 
   return { order: serializeOrder(order), added: true };
+}
+
+const KOT_CLAIM_TIMEOUT_MS = 2 * 60 * 1000;
+
+const kotTicketInclude = {
+  order: { include: orderInclude },
+};
+
+/** Pending customer-originated KOTs. A stale browser claim becomes available again after 2 minutes. */
+export async function listPendingKotTickets(restaurantId) {
+  const staleBefore = new Date(Date.now() - KOT_CLAIM_TIMEOUT_MS);
+  const tickets = await prisma.orderKotTicket.findMany({
+    where: {
+      restaurantId,
+      printedAt: null,
+      OR: [{ claimedAt: null }, { claimedAt: { lt: staleBefore } }],
+    },
+    include: kotTicketInclude,
+    orderBy: { createdAt: 'asc' },
+    take: 25,
+  });
+  return tickets.map(serializeKotTicket);
+}
+
+/** Atomically reserve one KOT so two staff screens do not print it twice. */
+export async function claimKotTicket(restaurantId, ticketId) {
+  const staleBefore = new Date(Date.now() - KOT_CLAIM_TIMEOUT_MS);
+  const claim = await prisma.orderKotTicket.updateMany({
+    where: {
+      id: ticketId,
+      restaurantId,
+      printedAt: null,
+      OR: [{ claimedAt: null }, { claimedAt: { lt: staleBefore } }],
+    },
+    data: { claimedAt: new Date() },
+  });
+
+  if (claim.count === 0) return null;
+
+  const ticket = await prisma.orderKotTicket.findFirst({
+    where: { id: ticketId, restaurantId },
+    include: kotTicketInclude,
+  });
+  return ticket ? serializeKotTicket(ticket) : null;
+}
+
+export async function markKotTicketPrinted(restaurantId, ticketId) {
+  const result = await prisma.orderKotTicket.updateMany({
+    where: { id: ticketId, restaurantId, printedAt: null },
+    data: { printedAt: new Date() },
+  });
+  if (result.count === 0) throw new AppError('KOT ticket not found', 404);
+  return { ok: true };
+}
+
+/** Releases a failed print immediately instead of waiting for the stale-claim timeout. */
+export async function releaseKotTicket(restaurantId, ticketId) {
+  const result = await prisma.orderKotTicket.updateMany({
+    where: { id: ticketId, restaurantId, printedAt: null },
+    data: { claimedAt: null },
+  });
+  if (result.count === 0) throw new AppError('KOT ticket not found', 404);
+  return { ok: true };
 }
 
 /**

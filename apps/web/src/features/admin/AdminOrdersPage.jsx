@@ -21,6 +21,7 @@ import { Button } from '../../shared/ui/Button.jsx';
 import { useAuth, UserRoles } from '../auth/AuthContext.jsx';
 import { PaymentMethodModal } from './PaymentMethodModal.jsx';
 import { useBillPrint } from './print/useBillPrint.jsx';
+import { getSavedPrinter, listQzPrinters } from './print/qzPrinter.js';
 import {
   formatClock,
   formatMoney,
@@ -39,28 +40,58 @@ function formatRelative(value) {
   return hours === 1 ? '1 hr ago' : `${hours} hr ago`;
 }
 
-function playNewOrderChime() {
+function playIncomingOrderAlarm(durationMs = 8_000) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return () => {};
+    const ctx = new Ctx();
+    let stopped = false;
+
+    const pulse = () => {
+      if (stopped) return;
+      const now = ctx.currentTime;
+      [740, 988].forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + index * 0.13);
+        gain.gain.exponentialRampToValueAtTime(0.07, now + 0.02 + index * 0.13);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11 + index * 0.13);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + index * 0.13);
+        osc.stop(now + 0.14 + index * 0.13);
+      });
+    };
+
+    pulse();
+    const intervalId = window.setInterval(pulse, 700);
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      window.clearInterval(intervalId);
+      ctx.close().catch(() => {});
+    };
+    window.setTimeout(stop, durationMs);
+    return stop;
+  } catch {
+    return () => {};
+  }
+}
+
+// Browsers require one staff interaction before a page may play alert audio.
+// Prime that permission on the first tap/click so later polling alerts can beep.
+function primeOrderAudio() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     const ctx = new Ctx();
-    const now = ctx.currentTime;
-    [523.25, 659.25, 783.99].forEach((freq, index) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.05, now + 0.02 + index * 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28 + index * 0.08);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + index * 0.05);
-      osc.stop(now + 0.4 + index * 0.08);
-    });
-    window.setTimeout(() => ctx.close().catch(() => {}), 800);
+    Promise.resolve(ctx.resume())
+      .catch(() => {})
+      .finally(() => ctx.close().catch(() => {}));
   } catch {
-    // ignore
+    // Audio remains optional when the browser does not support Web Audio.
   }
 }
 
@@ -89,8 +120,12 @@ export function AdminOrdersPage() {
   const [actionError, setActionError] = useState(null);
   const [completeTarget, setCompleteTarget] = useState(null);
   const knownPlacedIdsRef = useRef(null);
+  const alertedKotTicketIdsRef = useRef(new Set());
+  const kotAlarmStopRef = useRef(null);
+  const autoKotPrintingRef = useRef(false);
+  const autoKotCooldownUntilRef = useRef(0);
   const [nowTick, setNowTick] = useState(Date.now());
-  const { printBill, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
+  const { printBill, printKot, previewBill, printing: qzPrinting, printError, clearPrintError, printerModal } =
     useBillPrint();
   const canSettle = user?.role === UserRoles.RESTAURANT_ADMIN;
 
@@ -98,6 +133,11 @@ export function AdminOrdersPage() {
     const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => window.clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', primeOrderAudio, { once: true });
+    return () => window.removeEventListener('pointerdown', primeOrderAudio);
+  }, []);
 
   useEffect(() => {
     const t = window.setInterval(() => setNowTick(Date.now()), 30000);
@@ -136,8 +176,19 @@ export function AdminOrdersPage() {
     refetchIntervalInBackground: true,
   });
 
+  const kotTicketsQuery = useQuery({
+    queryKey: ['admin', 'kot-tickets'],
+    queryFn: async () => {
+      const payload = await api.listPendingKotTickets();
+      return payload.tickets || [];
+    },
+    refetchInterval: 4000,
+    refetchIntervalInBackground: true,
+  });
+
   const restaurant = restaurantQuery.data || ordersQuery.data?.restaurant || user?.restaurant;
   const orders = ordersQuery.data?.orders || [];
+  const hasKotPrinter = Boolean(getSavedPrinter('kot'));
   const tables = useMemo(
     () =>
       [...(tablesQuery.data || [])]
@@ -242,8 +293,6 @@ export function AdminOrdersPage() {
       return next;
     });
 
-    if (soundOn) playNewOrderChime();
-
     const clearTimer = window.setTimeout(() => {
       setFlashTableKeys((prev) => {
         const next = new Set(prev);
@@ -254,6 +303,96 @@ export function AdminOrdersPage() {
 
     return () => window.clearTimeout(clearTimer);
   }, [orders, soundOn]);
+
+  // Each durable KOT ticket represents one customer action: initial order or
+  // add-on. Sound once for eight seconds; no alarm survives beyond that window.
+  useEffect(() => {
+    const tickets = kotTicketsQuery.data || [];
+    const unseen = tickets.filter((ticket) => !alertedKotTicketIdsRef.current.has(ticket.id));
+    if (unseen.length === 0) return;
+
+    unseen.forEach((ticket) => alertedKotTicketIdsRef.current.add(ticket.id));
+    if (!soundOn) return;
+
+    kotAlarmStopRef.current?.();
+    kotAlarmStopRef.current = playIncomingOrderAlarm(8_000);
+  }, [kotTicketsQuery.data, soundOn]);
+
+  useEffect(() => {
+    return () => kotAlarmStopRef.current?.();
+  }, []);
+
+  // Auto-print only to a saved kitchen printer. If it is not configured or QZ
+  // Tray is offline, the ticket stays pending rather than opening browser print
+  // dialogs or silently losing a kitchen order.
+  useEffect(() => {
+    const pending = kotTicketsQuery.data || [];
+    const next = pending[0];
+    if (!next || autoKotPrintingRef.current || qzPrinting) return;
+    if (Date.now() < autoKotCooldownUntilRef.current) return;
+
+    const printerName = getSavedPrinter('kot');
+    if (!printerName) return;
+
+    let cancelled = false;
+    const run = async () => {
+      autoKotPrintingRef.current = true;
+      let claimedTicketId = null;
+      try {
+        const printers = await listQzPrinters();
+        if (!printers.includes(printerName)) {
+          setActionError(`Kitchen printer “${printerName}” is unavailable. Set the KOT printer again from an order.`);
+          autoKotCooldownUntilRef.current = Date.now() + 30_000;
+          return;
+        }
+
+        const claimed = await api.claimKotTicket(next.id);
+        const ticket = claimed.ticket;
+        if (!ticket || cancelled) return;
+        claimedTicketId = ticket.id;
+
+        const result = await printKot({
+          restaurant: restaurantQuery.data || restaurant,
+          order: ticket.order,
+          cashierName: user?.name || 'Staff',
+          onPrinted: async () => {
+            await api.markKotTicketPrinted(ticket.id);
+            await queryClient.invalidateQueries({ queryKey: ['admin', 'kot-tickets'] });
+          },
+        });
+
+        if (!result?.ok) {
+          await api.releaseKotTicket(ticket.id);
+          autoKotCooldownUntilRef.current = Date.now() + 30_000;
+        }
+      } catch (err) {
+        if (claimedTicketId) {
+          try {
+            await api.releaseKotTicket(claimedTicketId);
+          } catch {
+            // The ticket will become available again after its claim expires.
+          }
+        }
+        setActionError(err.message || 'Could not automatically print the KOT');
+        autoKotCooldownUntilRef.current = Date.now() + 30_000;
+      } finally {
+        autoKotPrintingRef.current = false;
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    kotTicketsQuery.data,
+    printKot,
+    qzPrinting,
+    queryClient,
+    restaurant,
+    restaurantQuery.data,
+    user?.name,
+  ]);
 
   const statusMutation = useMutation({
     mutationFn: ({
@@ -465,6 +604,22 @@ export function AdminOrdersPage() {
               {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
               {soundOn ? 'Sound on' : 'Sound off'}
             </button>
+            <span
+              className={[
+                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold',
+                hasKotPrinter
+                  ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100'
+                  : 'border-amber-300/30 bg-amber-400/10 text-amber-100',
+              ].join(' ')}
+              title={
+                hasKotPrinter
+                  ? 'Customer orders and add-ons print automatically to the saved kitchen printer.'
+                  : 'Open any order and use KOT once to choose the kitchen printer. Automatic KOT printing will then start.'
+              }
+            >
+              <Printer size={14} />
+              {hasKotPrinter ? 'Auto KOT ready' : 'Set KOT printer'}
+            </span>
             <button
               type="button"
               onClick={() => ordersQuery.refetch()}

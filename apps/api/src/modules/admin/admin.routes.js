@@ -29,6 +29,12 @@ import {
   updateAdminRestaurant,
 } from './admin.service.js';
 import {
+  claimKotTicket,
+  listPendingKotTickets,
+  markKotTicketPrinted,
+  releaseKotTicket,
+} from '../order/order.service.js';
+import {
   createRestaurantCaptain,
   deactivateRestaurantCaptain,
   deleteRestaurantCaptain,
@@ -234,6 +240,40 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const dashboard = await getAdminDashboard(req.restaurantId);
     res.json(dashboard);
+  }),
+);
+
+// Live Orders polls this durable queue. Tickets are created only by customer
+// submissions/add-ons, never by staff edits.
+adminRouter.get(
+  '/kot-tickets',
+  asyncHandler(async (req, res) => {
+    const tickets = await listPendingKotTickets(req.restaurantId);
+    res.json({ tickets });
+  }),
+);
+
+adminRouter.post(
+  '/kot-tickets/:ticketId/claim',
+  asyncHandler(async (req, res) => {
+    const ticket = await claimKotTicket(req.restaurantId, req.params.ticketId);
+    res.json({ ticket });
+  }),
+);
+
+adminRouter.post(
+  '/kot-tickets/:ticketId/printed',
+  asyncHandler(async (req, res) => {
+    const result = await markKotTicketPrinted(req.restaurantId, req.params.ticketId);
+    res.json(result);
+  }),
+);
+
+adminRouter.post(
+  '/kot-tickets/:ticketId/release',
+  asyncHandler(async (req, res) => {
+    const result = await releaseKotTicket(req.restaurantId, req.params.ticketId);
+    res.json(result);
   }),
 );
 
